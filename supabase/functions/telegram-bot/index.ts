@@ -11,6 +11,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Currency symbols mapping
+const currencySymbols: Record<string, string> = {
+  RUB: '₽',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  CNY: '¥',
+  KRW: '₩',
+  GEL: '₾',
+  AMD: '֏',
+};
+
 interface TelegramMessage {
   message_id: number;
   from: {
@@ -125,14 +138,29 @@ async function sendTelegramMessage(chatId: number, text: string, keyboard?: any)
 
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      callback_query_id: callbackQueryId,
-      text: text,
-    }),
-  });
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!result.ok) {
+      console.error(`answerCallbackQuery failed: ${JSON.stringify(result)}`);
+    } else {
+      console.log(`answerCallbackQuery success for ${callbackQueryId}`);
+    }
+
+    return result;
+  } catch (error) {
+    console.error(`Error in answerCallbackQuery: ${error}`);
+    throw error;
+  }
 }
 
 async function getUserByTelegramId(telegramId: number) {
@@ -148,6 +176,26 @@ async function getUserByTelegramId(telegramId: number) {
   }
 
   return data?.user_id || null;
+}
+
+async function getUserCurrency(userId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('user_preferences')
+    .select('currency')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching user currency:', error);
+    return 'RUB'; // Default currency
+  }
+
+  return data?.currency || 'RUB';
+}
+
+function formatAmount(amount: number, currency: string): string {
+  const symbol = currencySymbols[currency] || '₽';
+  return `${amount.toLocaleString('ru-RU')} ${symbol}`;
 }
 
 async function hasActiveSubscription(userId: string): Promise<boolean> {
@@ -301,6 +349,9 @@ async function handleStart(chatId: number, telegramId: number, firstName: string
 }
 
 async function handleBalance(chatId: number, userId: string) {
+  // Get user currency
+  const currency = await getUserCurrency(userId);
+
   // Get total income and expenses
   const { data: incomes } = await supabase
     .from('incomes')
@@ -321,10 +372,10 @@ async function handleBalance(chatId: number, userId: string) {
   await sendTelegramMessage(
     chatId,
     `💰 <b>Ваш баланс:</b>\n\n` +
-    `📥 Доходы: <b>${totalIncome.toLocaleString('ru-RU')} ₽</b>\n` +
-    `📤 Расходы: <b>${totalExpenses.toLocaleString('ru-RU')} ₽</b>\n` +
+    `📥 Доходы: <b>${formatAmount(totalIncome, currency)}</b>\n` +
+    `📤 Расходы: <b>${formatAmount(totalExpenses, currency)}</b>\n` +
     `━━━━━━━━━━━━━━━\n` +
-    `${emoji} Остаток: <b>${balance.toLocaleString('ru-RU')} ₽</b>`,
+    `${emoji} Остаток: <b>${formatAmount(balance, currency)}</b>`,
     getMainKeyboard()
   );
 }
@@ -357,6 +408,9 @@ async function handleCategories(chatId: number, userId: string) {
 }
 
 async function handleSources(chatId: number, userId: string) {
+  // Get user currency
+  const currency = await getUserCurrency(userId);
+
   const { data: sources } = await supabase
     .from('income_sources')
     .select('name, color, amount')
@@ -374,7 +428,7 @@ async function handleSources(chatId: number, userId: string) {
 
   const sourceList = sources
     .map(src => {
-      const amount = src.amount ? ` (${Number(src.amount).toLocaleString('ru-RU')} ₽)` : '';
+      const amount = src.amount ? ` (${formatAmount(Number(src.amount), currency)})` : '';
       return `💵 ${src.name}${amount}`;
     })
     .join('\n');
@@ -566,42 +620,51 @@ async function handleCallbackQuery(query: CallbackQuery) {
   const telegramId = query.from.id;
   const data = query.data!;
 
-  console.log(`Callback query received: data="${data}", telegramId=${telegramId}`);
+  console.log(`handleCallbackQuery: data="${data}", telegramId=${telegramId}`);
 
   const userId = await getUserByTelegramId(telegramId);
   console.log(`User ID from telegram: ${userId || 'not found'}`);
 
   if (!userId) {
-    await answerCallbackQuery(query.id, '❌ Вы не авторизованы');
+    // answerCallbackQuery уже вызван в main handler
+    await sendTelegramMessage(chatId, '❌ Вы не авторизованы. Используйте /start');
     return;
   }
 
   // Handle expense category selection
   if (data.startsWith('exp_cat_')) {
+    console.log(`Handling expense category selection`);
     const categoryId = data.replace('exp_cat_', '');
-    await setSession(telegramId, { type: 'expense', categoryId });
+    console.log(`Category ID: ${categoryId}`);
 
-    await answerCallbackQuery(query.id);
+    await setSession(telegramId, { type: 'expense', categoryId });
+    console.log(`Session set for expense with category ${categoryId}`);
+
     await sendTelegramMessage(
       chatId,
       '💸 Введите сумму расхода:\n\nНапример: <code>500</code> или <code>1500 Покупка продуктов</code>'
     );
+    return;
   }
 
   // Handle income source selection
-  else if (data.startsWith('inc_src_')) {
+  if (data.startsWith('inc_src_')) {
+    console.log(`Handling income source selection`);
     const sourceId = data.replace('inc_src_', '');
-    await setSession(telegramId, { type: 'income', sourceId });
+    console.log(`Source ID: ${sourceId}`);
 
-    await answerCallbackQuery(query.id);
+    await setSession(telegramId, { type: 'income', sourceId });
+    console.log(`Session set for income with source ${sourceId}`);
+
     await sendTelegramMessage(
       chatId,
       '💰 Введите сумму дохода:\n\nНапример: <code>50000</code> или <code>50000 Зарплата за октябрь</code>'
     );
+    return;
   }
 
   // Handle receipt category confirmation
-  else if (data.startsWith('receipt_cat_')) {
+  if (data.startsWith('receipt_cat_')) {
     console.log(`Receipt category confirmation: categoryId from callback`);
     const categoryId = data.replace('receipt_cat_', '');
 
@@ -611,7 +674,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
 
     if (!session || session.type !== 'receipt_confirmation') {
       console.log('Session invalid or expired');
-      await answerCallbackQuery(query.id, '❌ Сессия истекла. Отправьте чек заново.');
+      await sendTelegramMessage(chatId, '❌ Сессия истекла. Отправьте чек заново.');
       return;
     }
 
@@ -628,7 +691,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
     console.log(`Category data: ${categoryData ? categoryData.name : 'not found'}, error: ${catError?.message || 'none'}`);
 
     if (catError || !categoryData) {
-      await answerCallbackQuery(query.id, '❌ Ошибка получения категории');
+      await sendTelegramMessage(chatId, '❌ Ошибка получения категории');
       return;
     }
 
@@ -661,7 +724,6 @@ async function handleCallbackQuery(query: CallbackQuery) {
 
     if (error) {
       console.error('Error creating expense:', error);
-      await answerCallbackQuery(query.id, `❌ Ошибка: ${error.message}`);
       await sendTelegramMessage(
         chatId,
         `❌ Ошибка сохранения расхода: ${error.message}`,
@@ -675,8 +737,6 @@ async function handleCallbackQuery(query: CallbackQuery) {
     // Clear session
     await deleteSession(telegramId);
 
-    await answerCallbackQuery(query.id, '✅ Расход добавлен!');
-
     await sendTelegramMessage(
       chatId,
       `✅ <b>Чек сохранён!</b>\n\n` +
@@ -686,15 +746,16 @@ async function handleCallbackQuery(query: CallbackQuery) {
       (receiptData.description ? `📝 ${receiptData.description}` : ''),
       getMainKeyboard()
     );
+    return;
   }
 
   // Handle voice expense confirmation
-  else if (data.startsWith('voice_exp_')) {
+  if (data.startsWith('voice_exp_')) {
     const categoryId = data.replace('voice_exp_', '');
     const session = await getSession(telegramId);
 
     if (!session || session.type !== 'voice_expense_confirmation') {
-      await answerCallbackQuery(query.id, '❌ Сессия истекла');
+      await sendTelegramMessage(chatId, '❌ Сессия истекла');
       return;
     }
 
@@ -706,7 +767,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
       .single();
 
     if (catError || !categoryData) {
-      await answerCallbackQuery(query.id, '❌ Ошибка получения категории');
+      await sendTelegramMessage(chatId, '❌ Ошибка получения категории');
       return;
     }
 
@@ -723,12 +784,11 @@ async function handleCallbackQuery(query: CallbackQuery) {
 
     if (error) {
       console.error('Error creating voice expense:', error);
-      await answerCallbackQuery(query.id, `❌ Ошибка: ${error.message}`);
+      await sendTelegramMessage(chatId, `❌ Ошибка: ${error.message}`);
       return;
     }
 
     await deleteSession(telegramId);
-    await answerCallbackQuery(query.id, '✅ Расход добавлен!');
 
     await sendTelegramMessage(
       chatId,
@@ -739,15 +799,16 @@ async function handleCallbackQuery(query: CallbackQuery) {
       (session.description ? `📝 ${session.description}` : ''),
       getMainKeyboard()
     );
+    return;
   }
 
   // Handle voice income confirmation
-  else if (data.startsWith('voice_inc_')) {
+  if (data.startsWith('voice_inc_')) {
     const sourceId = data.replace('voice_inc_', '');
     const session = await getSession(telegramId);
 
     if (!session || session.type !== 'voice_income_confirmation') {
-      await answerCallbackQuery(query.id, '❌ Сессия истекла');
+      await sendTelegramMessage(chatId, '❌ Сессия истекла');
       return;
     }
 
@@ -759,7 +820,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
       .single();
 
     if (srcError || !sourceData) {
-      await answerCallbackQuery(query.id, '❌ Ошибка получения источника');
+      await sendTelegramMessage(chatId, '❌ Ошибка получения источника');
       return;
     }
 
@@ -776,12 +837,11 @@ async function handleCallbackQuery(query: CallbackQuery) {
 
     if (error) {
       console.error('Error creating voice income:', error);
-      await answerCallbackQuery(query.id, `❌ Ошибка: ${error.message}`);
+      await sendTelegramMessage(chatId, `❌ Ошибка: ${error.message}`);
       return;
     }
 
     await deleteSession(telegramId);
-    await answerCallbackQuery(query.id, '✅ Доход добавлен!');
 
     await sendTelegramMessage(
       chatId,
@@ -792,18 +852,30 @@ async function handleCallbackQuery(query: CallbackQuery) {
       (session.description ? `📝 ${session.description}` : ''),
       getMainKeyboard()
     );
+    return;
   }
 
   // Handle voice cancellation
-  else if (data === 'voice_cancel') {
+  if (data === 'voice_cancel') {
     await deleteSession(telegramId);
-    await answerCallbackQuery(query.id, '❌ Отменено');
     await sendTelegramMessage(
       chatId,
       '❌ Голосовая транзакция отменена',
       getMainKeyboard()
     );
+    return;
   }
+
+  // Handle subscription callbacks
+  if (data.startsWith('sub_')) {
+    console.log(`Subscription callback: ${data}`);
+    await sendTelegramMessage(chatId, 'Эта функция пока в разработке');
+    return;
+  }
+
+  // Unknown callback data
+  console.log(`Unknown callback data: ${data}`);
+  await sendTelegramMessage(chatId, '❓ Неизвестная команда');
 }
 
 async function handleTextMessage(message: TelegramMessage, userId: string) {
@@ -1376,27 +1448,54 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let update: TelegramUpdate;
   try {
-    const update: TelegramUpdate = await req.json();
-    console.log('Received update type:', update.callback_query ? 'callback_query' : update.message ? 'message' : 'other');
-
-    if (update.callback_query) {
-      console.log('Processing callback_query...');
-      await handleCallbackQuery(update.callback_query);
-    } else if (update.message) {
-      console.log('Processing message...');
-      await handleMessage(update);
-    }
-
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    const raw = await req.text();
+    console.log('RAW UPDATE:', raw);
+    update = JSON.parse(raw);
+    console.log('Type:', update.callback_query ? 'callback_query' : update.message ? 'message' : 'other');
   } catch (error) {
-    console.error('Error processing update:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    console.error('Failed to parse update:', error);
+    return new Response(JSON.stringify({ ok: false }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
+
+  // Обработка с таймаутом для защиты от зависаний
+  const handler = (async () => {
+    try {
+      if (update.callback_query) {
+        console.log('🔘 callback_query | data:', update.callback_query.data, '| user:', update.callback_query.from.id);
+
+        // ВАЖНО: Сначала отвечаем на callback, потом всё остальное
+        await answerCallbackQuery(update.callback_query.id);
+
+        // Теперь можем спокойно делать sendMessage и т.д.
+        await handleCallbackQuery(update.callback_query);
+      } else if (update.message) {
+        console.log('💬 message | text:', update.message.text || '[no text]', '| user:', update.message.from.id);
+        await handleMessage(update);
+      } else {
+        console.log('❓ unknown update:', JSON.stringify(update).substring(0, 200));
+      }
+    } catch (error) {
+      console.error('Handler error:', error);
+    }
+  })();
+
+  // Таймаут 8 секунд - защита от долгой обработки
+  const timeout = new Promise((resolve) =>
+    setTimeout(() => {
+      console.log('⏱️ Handler timeout reached (8s)');
+      resolve('timeout');
+    }, 8000)
+  );
+
+  const result = await Promise.race([handler, timeout]);
+
+  // Всегда быстрый ACK для Telegram
+  return new Response(JSON.stringify({ ok: true, result: result === 'timeout' ? 'timeout' : 'processed' }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 });
