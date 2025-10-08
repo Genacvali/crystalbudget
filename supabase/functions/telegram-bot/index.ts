@@ -1089,6 +1089,7 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
           'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
         body: JSON.stringify({
+          userId: userId,
           audioUrl: fileUrl,
           categories: categories,
           sources: sources,
@@ -1267,6 +1268,7 @@ async function handlePhotoMessage(message: TelegramMessage, userId: string) {
           'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
         body: JSON.stringify({
+          userId: userId,
           imageUrl: fileUrl,
           categories: categories,
         }),

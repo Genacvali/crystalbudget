@@ -20,24 +20,47 @@ serve(async (req) => {
 
     // Create Supabase client
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
-      global: {
-        headers: { Authorization: authHeader },
-      },
-    });
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    // Check if it's service role key (from Telegram bot) or user token
+    const isServiceRole = authHeader.includes(SUPABASE_SERVICE_ROLE_KEY!);
+    
+    let supabase;
+    let userId;
+    
+    // Get request data first
+    const requestData = await req.json();
+    
+    if (isServiceRole) {
+      // Service role call from Telegram bot - get userId from request body
+      supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+      userId = requestData.userId;
+      
+      if (!userId) {
+        throw new Error('Требуется userId в теле запроса');
+      }
+    } else {
+      // User token call - validate token
+      const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+      supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+        global: {
+          headers: { Authorization: authHeader },
+        },
+      });
 
-    // Get user from token
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      throw new Error('Неверный токен авторизации');
+      // Get user from token
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('Неверный токен авторизации');
+      }
+      userId = user.id;
     }
 
     // Check if user has active subscription
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('status', 'active')
       .gt('expires_at', new Date().toISOString())
       .maybeSingle();
@@ -55,7 +78,8 @@ serve(async (req) => {
       );
     }
 
-    const { audioUrl, categories, sources } = await req.json();
+    // Extract data from request
+    const { audioUrl, categories, sources } = requestData;
 
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 
