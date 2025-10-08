@@ -270,12 +270,28 @@ function getReportsKeyboard() {
 function getSettingsKeyboard() {
   return {
     keyboard: [
+      [{ text: '🌍 Валюта' }],
       [{ text: '❓ Помощь' }],
       [{ text: '🔙 Назад' }]
     ],
     resize_keyboard: true,
     one_time_keyboard: false
   };
+}
+
+function getCurrencyKeyboard() {
+  // Supported currencies should match user_preferences.currency values
+  const codes = ['RUB','USD','EUR','GBP','JPY','CNY','KRW','GEL','AMD'];
+  // Build inline keyboard in 3 columns
+  const rows: any[] = [];
+  for (let i = 0; i < codes.length; i += 3) {
+    rows.push(
+      codes.slice(i, i + 3).map((code) => ({ text: `${currencySymbols[code] || ''} ${code}`, callback_data: `currency_${code}` }))
+    );
+  }
+  // Use dedicated back callback for currency menu
+  rows.push([{ text: '🔙 Назад', callback_data: 'currency_back' }]);
+  return { inline_keyboard: rows };
 }
 
 async function generateCloudPaymentsLink(userId: string, planType: string, amount: number, email?: string): Promise<string> {
@@ -631,6 +647,9 @@ async function handleCallbackQuery(query: CallbackQuery) {
     return;
   }
 
+  // Get user currency
+  const currency = await getUserCurrency(userId);
+
   // Handle expense category selection
   if (data.startsWith('exp_cat_')) {
     console.log(`Handling expense category selection`);
@@ -642,7 +661,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
 
     await sendTelegramMessage(
       chatId,
-      '💸 Введите сумму расхода:\n\nНапример: <code>500</code> или <code>1500 Покупка продуктов</code>'
+      '💸 Введите сумму расхода:\n\nНапример: <code>500</code> или <code>1500 Покупка продуктов</code>\n\nНажмите <b>🔙 Назад</b>, чтобы отменить'
     );
     return;
   }
@@ -658,7 +677,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
 
     await sendTelegramMessage(
       chatId,
-      '💰 Введите сумму дохода:\n\nНапример: <code>50000</code> или <code>50000 Зарплата за октябрь</code>'
+      '💰 Введите сумму дохода:\n\nНапример: <code>50000</code> или <code>50000 Зарплата за октябрь</code>\n\nНажмите <b>🔙 Назад</b>, чтобы отменить'
     );
     return;
   }
@@ -740,7 +759,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
     await sendTelegramMessage(
       chatId,
       `✅ <b>Чек сохранён!</b>\n\n` +
-      `💸 Сумма: <b>${receiptData.amount.toLocaleString('ru-RU')} ₽</b>\n` +
+      `💸 Сумма: <b>${formatAmount(receiptData.amount, currency)}</b>\n` +
       `📁 ${categoryData.icon} ${categoryData.name}\n` +
       `🏪 ${receiptData.store}\n` +
       (receiptData.description ? `📝 ${receiptData.description}` : ''),
@@ -794,7 +813,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
       chatId,
       `✅ <b>Расход сохранён!</b>\n\n` +
       `🎤 "${session.transcribedText}"\n\n` +
-      `💸 Сумма: <b>${session.amount.toLocaleString('ru-RU')} ₽</b>\n` +
+      `💸 Сумма: <b>${formatAmount(session.amount, currency)}</b>\n` +
       `📁 ${categoryData.icon} ${categoryData.name}\n` +
       (session.description ? `📝 ${session.description}` : ''),
       getMainKeyboard()
@@ -847,7 +866,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
       chatId,
       `✅ <b>Доход сохранён!</b>\n\n` +
       `🎤 "${session.transcribedText}"\n\n` +
-      `💰 Сумма: <b>${session.amount.toLocaleString('ru-RU')} ₽</b>\n` +
+      `💰 Сумма: <b>${formatAmount(session.amount, currency)}</b>\n` +
       `💵 ${sourceData.name}\n` +
       (session.description ? `📝 ${session.description}` : ''),
       getMainKeyboard()
@@ -873,6 +892,77 @@ async function handleCallbackQuery(query: CallbackQuery) {
     return;
   }
 
+  // Currency menu back -> return to settings
+  if (data === 'currency_back') {
+    await sendTelegramMessage(
+      chatId,
+      '⚙️ <b>Настройки</b>\n\nВыберите раздел:',
+      getSettingsKeyboard()
+    );
+    return;
+  }
+
+  // Handle currency selection
+  if (data.startsWith('currency_')) {
+    const newCurrency = data.replace('currency_', '');
+    const valid = ['RUB','USD','EUR','GBP','JPY','CNY','KRW','GEL','AMD'].includes(newCurrency);
+    if (!valid) {
+      await sendTelegramMessage(chatId, '❌ Неверный код валюты');
+      return;
+    }
+
+    // Try robust save: upsert -> update -> insert
+    let saveError: any = null;
+    try {
+      const { data: upsertRow, error } = await supabase
+        .from('user_preferences')
+        .upsert({ user_id: userId, currency: newCurrency }, { onConflict: 'user_id' })
+        .select()
+        .single();
+      saveError = error || null;
+      if (!saveError) {
+        await sendTelegramMessage(
+          chatId,
+          `✅ Валюта сохранена: <b>${newCurrency}</b>`
+        );
+        return;
+      }
+    } catch (e) {
+      saveError = e;
+    }
+
+    if (saveError) {
+      console.warn('Upsert failed, try update then insert', saveError);
+      // Try update
+      const { error: updateError } = await supabase
+        .from('user_preferences')
+        .update({ currency: newCurrency })
+        .eq('user_id', userId);
+      if (!updateError) {
+        await sendTelegramMessage(
+          chatId,
+          `✅ Валюта сохранена: <b>${newCurrency}</b>`
+        );
+        return;
+      }
+      // Try insert
+      const { error: insertError } = await supabase
+        .from('user_preferences')
+        .insert({ user_id: userId, currency: newCurrency });
+      if (!insertError) {
+        await sendTelegramMessage(
+          chatId,
+          `✅ Валюта сохранена: <b>${newCurrency}</b>`
+        );
+        return;
+      }
+
+      console.error('Error saving currency (insert):', insertError);
+      await sendTelegramMessage(chatId, `❌ Не удалось сохранить валюту. ${insertError?.message ? 'Ошибка: ' + insertError.message : 'Попробуйте позже.'}`);
+      return;
+    }
+  }
+
   // Unknown callback data
   console.log(`Unknown callback data: ${data}`);
   await sendTelegramMessage(chatId, '❓ Неизвестная команда');
@@ -885,16 +975,30 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
 
   console.log(`handleTextMessage: text="${text}", userId=${userId}`);
 
+  // Get user currency
+  const currency = await getUserCurrency(userId);
+
   // Check if user is in a session (adding expense/income)
   const session = await getSession(telegramId);
   console.log(`Session state: ${session ? JSON.stringify(session) : 'none'}`);
 
   if (session) {
+    // Allow cancel
+    if (text === '🔙 Назад' || text === '/cancel') {
+      await deleteSession(telegramId);
+      await sendTelegramMessage(
+        chatId,
+        '❌ Ввод суммы отменен',
+        getMainKeyboard()
+      );
+      return;
+    }
+
     const parts = text.split(' ');
     const amount = parseFloat(parts[0]);
 
     if (isNaN(amount) || amount <= 0) {
-      await sendTelegramMessage(chatId, '❌ Неверная сумма. Введите положительное число.');
+      await sendTelegramMessage(chatId, '❌ Неверная сумма. Введите положительное число или нажмите <b>🔙 Назад</b> для отмены.');
       return;
     }
 
@@ -917,7 +1021,7 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
         await sendTelegramMessage(
           chatId,
           `✅ <b>Расход добавлен!</b>\n\n` +
-          `💸 Сумма: <b>${amount.toLocaleString('ru-RU')} ₽</b>\n` +
+          `💸 Сумма: <b>${formatAmount(amount, currency)}</b>\n` +
           (description ? `📝 ${description}` : ''),
           getMainKeyboard()
         );
@@ -939,7 +1043,7 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
         await sendTelegramMessage(
           chatId,
           `✅ <b>Доход добавлен!</b>\n\n` +
-          `💰 Сумма: <b>${amount.toLocaleString('ru-RU')} ₽</b>\n` +
+          `💰 Сумма: <b>${formatAmount(amount, currency)}</b>\n` +
           (description ? `📝 ${description}` : ''),
           getMainKeyboard()
         );
@@ -982,6 +1086,13 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
         getSettingsKeyboard()
       );
       break;
+    case '🌍 Валюта':
+      await sendTelegramMessage(
+        chatId,
+        '🌍 <b>Выбор валюты</b>\n\nВыберите предпочитаемую валюту для отображения сумм:',
+        getCurrencyKeyboard()
+      );
+      break;
     case '💸 Добавить расход':
       await startAddExpense(chatId, userId);
       break;
@@ -1022,7 +1133,8 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
         `  • Баланс\n` +
         `  • Категории и источники\n\n` +
         `⚙️ <b>Настройки</b>\n` +
-        `  • ❓ Помощь\n\n` +
+        `  • ❓ Помощь\n` +
+        `  • 🌍 Валюта\n\n` +
         `💡 <b>Совет:</b> Запишите голосовое "Купил продуктов на 500 рублей" и бот создаст транзакцию автоматически!`,
         getSettingsKeyboard()
       );
@@ -1041,6 +1153,9 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
   const telegramId = message.from.id;
 
   console.log('Voice message received, processing...');
+
+  // Get user currency
+  const currency = await getUserCurrency(userId);
 
   await sendTelegramMessage(chatId, '🎤 Распознаю голос...');
 
@@ -1149,7 +1264,7 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
       await sendTelegramMessage(
         chatId,
         `🎤 <b>Распознано:</b> "${voiceData.transcribedText}"\n\n` +
-        `💸 Сумма: <b>${voiceData.amount.toLocaleString('ru-RU')} ₽</b>\n` +
+        `💸 Сумма: <b>${formatAmount(voiceData.amount, currency)}</b>\n` +
         (voiceData.description ? `📝 ${voiceData.description}\n` : '') +
         (suggestedCategory ? `\n💡 Предложенная категория: ${suggestedCategory.icon} ${suggestedCategory.name}` : '') +
         `\n\n<b>Выберите категорию:</b>`,
@@ -1196,7 +1311,7 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
       await sendTelegramMessage(
         chatId,
         `🎤 <b>Распознано:</b> "${voiceData.transcribedText}"\n\n` +
-        `💰 Сумма: <b>${voiceData.amount.toLocaleString('ru-RU')} ₽</b>\n` +
+        `💰 Сумма: <b>${formatAmount(voiceData.amount, currency)}</b>\n` +
         (voiceData.description ? `📝 ${voiceData.description}\n` : '') +
         (suggestedSource ? `\n💡 Предложенный источник: ${suggestedSource.name}` : '') +
         `\n\n<b>Выберите источник:</b>`,
@@ -1223,6 +1338,9 @@ async function handlePhotoMessage(message: TelegramMessage, userId: string) {
   const telegramId = message.from.id;
 
   console.log('Photo received, processing receipt...');
+
+  // Get user currency
+  const currency = await getUserCurrency(userId);
 
   await sendTelegramMessage(chatId, '📸 Сканирую чек...');
 
@@ -1333,7 +1451,7 @@ async function handlePhotoMessage(message: TelegramMessage, userId: string) {
     await sendTelegramMessage(
       chatId,
       `📸 <b>Чек распознан!</b>\n\n` +
-      `💰 Сумма: <b>${receiptData.amount.toLocaleString('ru-RU')} ₽</b>\n` +
+      `💰 Сумма: <b>${formatAmount(receiptData.amount, currency)}</b>\n` +
       `🏪 ${receiptData.store}\n` +
       (receiptData.description ? `📝 ${receiptData.description}\n` : '') +
       `\n<b>Выберите категорию:</b>`,
