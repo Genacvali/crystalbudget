@@ -1,0 +1,25 @@
+project_id = "tpecbskafbazzlgytbpf"
+
+[functions.ai-chat]
+verify_jwt = false
+
+[functions.cleanup-expired-codes]
+verify_jwt = false
+
+[functions.telegram-bot]
+verify_jwt = false
+
+[functions.set-telegram-webhook]
+verify_jwt = false
+
+[functions.transcribe-voice]
+verify_jwt = false
+
+[functions.scan-receipt]
+verify_jwt = false
+
+[functions.cloudpayments-webhook]
+verify_jwt = false
+
+[functions.send-telegram-notification]
+verify_jwt = false
