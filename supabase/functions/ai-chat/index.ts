@@ -32,7 +32,7 @@ async function getEffectiveUserId(supabase: any, userId: string): Promise<string
   // Check if user is a family member
   const { data: membership, error: membershipError } = await supabase
     .from('family_members')
-    .select('family_id, families!inner(owner_id)')
+    .select('family_id')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -42,10 +42,24 @@ async function getEffectiveUserId(supabase: any, userId: string): Promise<string
 
   console.log('👨‍👩‍👧‍👦 Family membership check:', { membership, membershipError });
 
-  if (membership && membership.families) {
-    const ownerId = (membership.families as any).owner_id;
-    console.log('✅ User is family member, using owner ID:', ownerId);
-    return ownerId;
+  if (membership) {
+    // Get the family owner
+    const { data: family, error: familyError } = await supabase
+      .from('families')
+      .select('owner_id')
+      .eq('id', membership.family_id)
+      .maybeSingle();
+
+    if (familyError) {
+      console.error('❌ Error getting family owner:', familyError);
+    }
+
+    console.log('👑 Family owner check:', { family, familyError });
+
+    if (family) {
+      console.log('✅ User is family member, using owner ID:', family.owner_id);
+      return family.owner_id;
+    }
   }
 
   console.log('✅ User is individual, using their own ID');
