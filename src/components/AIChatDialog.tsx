@@ -60,7 +60,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
       // Фокусируемся на поле ввода при открытии диалога
       setTimeout(() => {
         textareaRef.current?.focus();
-      }, 300);
+      }, 500);
     }
   }, [open, hasGreeted, messages.length]);
 
@@ -688,7 +688,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
       // Возвращаем фокус в поле ввода
       setTimeout(() => {
         textareaRef.current?.focus();
-      }, 300);
+      }, 500);
     }
   };
 
@@ -825,12 +825,6 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
                   e.preventDefault();
                   sendMessage();
                 }
-              }}
-              onClick={() => {
-                // Дополнительная фокусировка при клике на мобильных устройствах
-                setTimeout(() => {
-                  textareaRef.current?.focus();
-                }, 50);
               }}
               placeholder="Напишите сообщение..."
               className="min-h-[36px] sm:min-h-[40px] resize-none text-sm"
