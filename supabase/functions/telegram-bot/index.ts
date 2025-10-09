@@ -256,7 +256,7 @@ async function getSubscriptionInfo(userId: string) {
 function getMainKeyboard() {
   return {
     keyboard: [
-      [{ text: '💰 Финансы' }, { text: '📊 Отчёты' }],
+      [{ text: '💰 Финансы' }],
       [{ text: '⚙️ Настройки' }]
     ],
     resize_keyboard: true,
@@ -389,30 +389,82 @@ async function handleBalance(chatId: number, userId: string) {
   // Get user currency
   const currency = await getUserCurrency(userId);
 
-  // Get total income and expenses
+  // Check if user has a family
+  const { data: familyMember } = await supabase
+    .from('family_members')
+    .select('family_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  // Get current month boundaries
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+  // Get all family members if user has a family
+  let familyUserIds = [userId];
+  if (familyMember) {
+    const { data: familyMembers } = await supabase
+      .from('family_members')
+      .select('user_id')
+      .eq('family_id', familyMember.family_id);
+
+    if (familyMembers) {
+      familyUserIds = familyMembers.map(m => m.user_id);
+    }
+  }
+
+  // Get current month income and expenses (for all family members)
   const { data: incomes } = await supabase
     .from('incomes')
     .select('amount')
-    .eq('user_id', userId);
+    .in('user_id', familyUserIds)
+    .gte('date', startOfMonth)
+    .lte('date', endOfMonth);
 
   const { data: expenses } = await supabase
     .from('expenses')
     .select('amount')
-    .eq('user_id', userId);
+    .in('user_id', familyUserIds)
+    .gte('date', startOfMonth)
+    .lte('date', endOfMonth);
 
-  const totalIncome = (incomes || []).reduce((sum, inc) => sum + Number(inc.amount), 0);
-  const totalExpenses = (expenses || []).reduce((sum, exp) => sum + Number(exp.amount), 0);
-  const balance = totalIncome - totalExpenses;
+  // Get previous months for carry-over balance (for all family members)
+  const { data: previousIncomes } = await supabase
+    .from('incomes')
+    .select('amount')
+    .in('user_id', familyUserIds)
+    .lt('date', startOfMonth);
 
-  const emoji = balance > 0 ? '✅' : balance < 0 ? '❌' : '➖';
+  const { data: previousExpenses } = await supabase
+    .from('expenses')
+    .select('amount')
+    .in('user_id', familyUserIds)
+    .lt('date', startOfMonth);
+
+  const currentMonthIncome = (incomes || []).reduce((sum, inc) => sum + Number(inc.amount), 0);
+  const currentMonthExpenses = (expenses || []).reduce((sum, exp) => sum + Number(exp.amount), 0);
+  const monthBalance = currentMonthIncome - currentMonthExpenses;
+
+  const previousTotalIncome = (previousIncomes || []).reduce((sum, inc) => sum + Number(inc.amount), 0);
+  const previousTotalExpenses = (previousExpenses || []).reduce((sum, exp) => sum + Number(exp.amount), 0);
+  const carryOverBalance = previousTotalIncome - previousTotalExpenses;
+
+  const totalBalance = monthBalance + carryOverBalance;
+
+  const monthName = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(now);
 
   await sendTelegramMessage(
     chatId,
-    `💰 <b>Ваш баланс:</b>\n\n` +
-    `📥 Доходы: <b>${formatAmount(totalIncome, currency)}</b>\n` +
-    `📤 Расходы: <b>${formatAmount(totalExpenses, currency)}</b>\n` +
-    `━━━━━━━━━━━━━━━\n` +
-    `${emoji} Остаток: <b>${formatAmount(balance, currency)}</b>`,
+    `📊 <b>Баланс за ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}</b>\n` +
+    `${monthBalance > 0 ? '✅' : monthBalance < 0 ? '❌' : '➖'} <b>${formatAmount(monthBalance, currency)}</b>\n` +
+    `${monthBalance > 0 ? 'Профицит' : monthBalance < 0 ? 'Дефицит' : 'Ноль'}\n\n` +
+    `📉 <b>Общие расходы</b>\n` +
+    `<b>${formatAmount(currentMonthExpenses, currency)}</b>\n` +
+    (currentMonthIncome > 0 ? `${Math.round(currentMonthExpenses / currentMonthIncome * 100)}% от дохода\n\n` : '\n') +
+    `💰 <b>Общий баланс</b>\n` +
+    `<b>${formatAmount(totalBalance, currency)}</b>\n` +
+    (carryOverBalance !== 0 ? `${formatAmount(monthBalance, currency)} + ${formatAmount(carryOverBalance, currency)} остаток` : `Только за ${monthName}`),
     getMainKeyboard()
   );
 }
