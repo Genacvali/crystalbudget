@@ -53,7 +53,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
         setHasGreeted(true);
         const welcomeMessage: Message = {
           role: 'assistant',
-          content: `Привет! Чем могу помочь?`
+          content: `Здравствуйте. Я G.A.I.A. (Global Analytical Intelligence for Allocation) — ваш интеллектуальный ассистент CrystalBudget.`
         };
         setMessages([welcomeMessage]);
       }
@@ -739,7 +739,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
       <DialogContent className="max-w-2xl h-[85vh] sm:h-[70vh] flex flex-col p-0 mx-2 sm:mx-0">
         <DialogHeader className="px-4 pt-4 pb-2 border-b">
           <DialogTitle className="text-lg font-medium">
-            AI Ассистент
+            G.A.I.A.
           </DialogTitle>
         </DialogHeader>
 

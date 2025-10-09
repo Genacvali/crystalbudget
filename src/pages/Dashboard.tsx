@@ -398,7 +398,7 @@ const Dashboard = () => {
           </Button>
           <Button className="h-auto py-2.5 sm:py-3 text-sm px-3 sm:px-4 flex items-center gap-2" variant="secondary" onClick={() => setAiChatOpen(true)}>
             <Bot className="h-5 w-5" />
-            <span className="hidden sm:inline font-medium">AI Помощник</span>
+            <span className="hidden sm:inline font-medium">G.A.I.A.</span>
           </Button>
         </div>
 
