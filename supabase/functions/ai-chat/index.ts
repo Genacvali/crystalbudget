@@ -9,31 +9,46 @@ const corsHeaders = {
 
 // Get family owner ID if user is in a family, otherwise return user_id
 async function getEffectiveUserId(supabase: any, userId: string): Promise<string> {
+  console.log('🔍 Determining effective user ID for:', userId);
+  
   // Check if user is a family owner
-  const { data: ownedFamily } = await supabase
+  const { data: ownedFamily, error: ownedFamilyError } = await supabase
     .from('families')
     .select('id, owner_id')
     .eq('owner_id', userId)
     .maybeSingle();
 
+  if (ownedFamilyError) {
+    console.error('❌ Error checking family ownership:', ownedFamilyError);
+  }
+
+  console.log('👑 Family ownership check:', { ownedFamily, ownedFamilyError });
+
   if (ownedFamily) {
-    // User is family owner, use their ID
+    console.log('✅ User is family owner, using their ID');
     return userId;
   }
 
   // Check if user is a family member
-  const { data: membership } = await supabase
+  const { data: membership, error: membershipError } = await supabase
     .from('family_members')
     .select('family_id, families!inner(owner_id)')
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (membership && membership.families) {
-    // User is a family member, use family owner's ID
-    return (membership.families as any).owner_id;
+  if (membershipError) {
+    console.error('❌ Error checking family membership:', membershipError);
   }
 
-  // User is not in a family, use their own ID
+  console.log('👨‍👩‍👧‍👦 Family membership check:', { membership, membershipError });
+
+  if (membership && membership.families) {
+    const ownerId = (membership.families as any).owner_id;
+    console.log('✅ User is family member, using owner ID:', ownerId);
+    return ownerId;
+  }
+
+  console.log('✅ User is individual, using their own ID');
   return userId;
 }
 
@@ -70,48 +85,111 @@ serve(async (req) => {
         const effectiveUserId = await getEffectiveUserId(supabase, userId);
         console.log('Effective user ID:', effectiveUserId);
 
-        // Load user's budget context
+        // Load user's budget context - get last 12 months for better context
         const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString(); // 12 months ago
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
         // Get all family members if user is in a family
         let familyUserIds = [userId];
-        const { data: familyMember } = await supabase
+        console.log('👥 Starting family members check for user:', userId);
+        
+        const { data: familyMember, error: familyMemberError } = await supabase
           .from('family_members')
           .select('family_id')
           .eq('user_id', userId)
           .maybeSingle();
 
+        if (familyMemberError) {
+          console.error('❌ Error checking family membership:', familyMemberError);
+        }
+
+        console.log('👥 Family member check result:', { familyMember, familyMemberError });
+
         if (familyMember) {
-          const { data: familyMembers } = await supabase
+          console.log('👨‍👩‍👧‍👦 User is in family, loading all members for family_id:', familyMember.family_id);
+          
+          const { data: familyMembers, error: familyMembersError } = await supabase
             .from('family_members')
             .select('user_id')
             .eq('family_id', familyMember.family_id);
 
+          if (familyMembersError) {
+            console.error('❌ Error loading family members:', familyMembersError);
+          }
+
+          console.log('👨‍👩‍👧‍👦 Family members loaded:', { familyMembers, familyMembersError });
+
           if (familyMembers) {
             familyUserIds = familyMembers.map(m => m.user_id);
+            console.log('✅ Family user IDs updated:', familyUserIds);
           }
+        } else {
+          console.log('👤 User is individual, using single user ID');
         }
+
+        // First check if user has any data at all
+        const [totalExpensesRes, totalIncomesRes] = await Promise.all([
+          supabase.from('expenses').select('id').in('user_id', familyUserIds),
+          supabase.from('incomes').select('id').in('user_id', familyUserIds),
+        ]);
+
+        console.log('📊 Total data check:', {
+          totalExpenses: totalExpensesRes.data?.length || 0,
+          totalIncomes: totalIncomesRes.data?.length || 0,
+          totalExpensesError: totalExpensesRes.error,
+          totalIncomesError: totalIncomesRes.error
+        });
 
         const [categoriesRes, sourcesRes, expensesRes, incomesRes] = await Promise.all([
           supabase.from('categories').select('*').eq('user_id', effectiveUserId),
           supabase.from('income_sources').select('*').eq('user_id', effectiveUserId),
-          supabase.from('expenses').select('*, categories(name)').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
-          supabase.from('incomes').select('*, income_sources(name)').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
+          supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
+          supabase.from('incomes').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
         ]);
+
+        // Log any errors
+        if (categoriesRes.error) console.error('Categories error:', categoriesRes.error);
+        if (sourcesRes.error) console.error('Sources error:', sourcesRes.error);
+        if (expensesRes.error) console.error('Expenses error:', expensesRes.error);
+        if (incomesRes.error) console.error('Incomes error:', incomesRes.error);
 
         const categories = categoriesRes.data || [];
         const sources = sourcesRes.data || [];
         const expenses = expensesRes.data || [];
         const incomes = incomesRes.data || [];
 
-        console.log('Loaded data:', {
+        console.log('📊 Loaded data summary:', {
+          userId: userId,
+          effectiveUserId: effectiveUserId,
+          familyUserIds: familyUserIds,
           categories: categories.length,
           sources: sources.length,
           expenses: expenses.length,
-          incomes: incomes.length
+          incomes: incomes.length,
+          dateRange: { startOfMonth, endOfMonth }
         });
+
+        // Log sample data if available
+        if (expenses.length > 0) {
+          console.log('📉 Sample expenses:', expenses.slice(0, 3).map(e => ({
+            id: e.id,
+            amount: e.amount,
+            date: e.date,
+            category_id: e.category_id,
+            user_id: e.user_id
+          })));
+        }
+
+        if (incomes.length > 0) {
+          console.log('📈 Sample incomes:', incomes.slice(0, 3).map(i => ({
+            id: i.id,
+            amount: i.amount,
+            date: i.date,
+            source_id: i.source_id,
+            user_id: i.user_id
+          })));
+        }
 
         // Calculate totals
         const totalIncome = incomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
@@ -125,7 +203,7 @@ serve(async (req) => {
 
 ТЕКУЩИЙ КОНТЕКСТ БЮДЖЕТА ПОЛЬЗОВАТЕЛЯ:
 
-📊 Баланс за текущий месяц:
+📊 Баланс за последние 12 месяцев:
 - Доход: ${totalIncome} ₽
 - Расход: ${totalExpense} ₽
 - Остаток: ${balance} ₽
@@ -137,10 +215,10 @@ ${sources.map(s => `- "${s.name}": ${s.amount || 0} ₽`).join('\n') || '(нет
 ${categories.map(c => `- ${c.icon} "${c.name}" (лимит: ${c.allocation_amount || 0} ₽, процент: ${c.allocation_percent || 0}%)`).join('\n') || '(нет категорий)'}
 
 📈 Последние доходы (${incomes.length}):
-${incomes.slice(0, 5).map(i => `- ${i.amount} ₽ (${i.income_sources?.name || 'неизвестно'}) - ${i.description || 'без описания'}`).join('\n') || '(нет доходов)'}
+${incomes.slice(0, 5).map(i => `- ${i.amount} ₽ (ID источника: ${i.source_id}) - ${i.description || 'без описания'}`).join('\n') || '(нет доходов)'}
 
 📉 Последние расходы (${expenses.length}):
-${expenses.slice(0, 5).map(e => `- ${e.amount} ₽ (${e.categories?.name || 'неизвестно'}) - ${e.description || 'без описания'}`).join('\n') || '(нет расходов)'}
+${expenses.slice(0, 5).map(e => `- ${e.amount} ₽ (ID категории: ${e.category_id}) - ${e.description || 'без описания'}`).join('\n') || '(нет расходов)'}
 
 Используй этот контекст для ответов на вопросы пользователя о его финансах, анализа расходов и доходов, и предоставления рекомендаций.`;
       }

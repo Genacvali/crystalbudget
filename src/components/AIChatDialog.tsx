@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sparkles, Send, Loader2, Paperclip, X, Image as ImageIcon, FileText } from "lucide-react";
+import { Send, Loader2, Paperclip, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -52,7 +52,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
         setHasGreeted(true);
         const welcomeMessage: Message = {
           role: 'assistant',
-          content: `Привет! 👋 Я помогу с анализом финансов, обработкой чеков и документов. Что вас интересует?`
+          content: `Привет! Чем могу помочь?`
         };
         setMessages([welcomeMessage]);
       }
@@ -728,38 +728,34 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
       }
     }}>
       <DialogContent className="max-w-2xl h-[70vh] flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            AI Финансовый Ассистент
+        <DialogHeader className="px-4 pt-4 pb-2 border-b">
+          <DialogTitle className="text-lg font-medium">
+            AI Ассистент
           </DialogTitle>
-          <DialogDescription>
-            Задавайте вопросы, загружайте чеки и документы для анализа
-          </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-6" ref={scrollRef}>
-          <div className="space-y-4 py-4">
+        <ScrollArea className="flex-1 px-4" ref={scrollRef}>
+          <div className="space-y-3 py-3">
             {messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={cn(
-                  "flex gap-3 p-4 rounded-lg animate-in fade-in slide-in-from-bottom-2 duration-300",
+                  "flex gap-2 p-3 rounded-lg",
                   msg.role === 'user'
-                    ? "bg-primary/10 ml-8"
-                    : "bg-muted/50 mr-8"
+                    ? "bg-primary/10 ml-6"
+                    : "bg-muted/30 mr-6"
                 )}
               >
-                <div className="flex-1 text-sm leading-relaxed">
+                <div className="flex-1 text-sm">
                   {formatMessageContent(msg.content)}
                 </div>
               </div>
             ))}
             
             {isLoading && (
-              <div className="flex gap-3 p-4 rounded-lg bg-muted mr-8 animate-in fade-in">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                <span className="text-sm text-muted-foreground">AI думает...</span>
+              <div className="flex gap-2 p-3 rounded-lg bg-muted mr-6">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Думаю...</span>
               </div>
             )}
             
@@ -767,25 +763,20 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
           </div>
         </ScrollArea>
 
-        <div className="px-6 pb-6 space-y-3">
+        <div className="px-4 pb-4">
           {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1 mb-2">
               {attachments.map((att, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-2 bg-muted px-3 py-2 rounded-lg text-sm"
+                  className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs"
                 >
-                  {att.type === 'image' ? (
-                    <ImageIcon className="h-4 w-4" />
-                  ) : (
-                    <FileText className="h-4 w-4" />
-                  )}
-                  <span className="max-w-[150px] truncate">{att.name}</span>
+                  <span className="max-w-[100px] truncate">{att.name}</span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-5 w-5"
+                    className="h-4 w-4"
                     onClick={() => removeAttachment(idx)}
                   >
                     <X className="h-3 w-3" />
@@ -807,10 +798,11 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon"
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading}
+              className="h-10 w-10"
             >
               <Paperclip className="h-4 w-4" />
             </Button>
@@ -824,8 +816,8 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
                   sendMessage();
                 }
               }}
-              placeholder="Задайте вопрос или опишите проблему..."
-              className="min-h-[60px] resize-none"
+              placeholder="Напишите сообщение..."
+              className="min-h-[40px] resize-none text-sm"
               disabled={isLoading}
             />
 
@@ -833,7 +825,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               onClick={sendMessage}
               disabled={isLoading || (!input.trim() && attachments.length === 0)}
               size="icon"
-              className="h-[60px]"
+              className="h-10 w-10"
             >
               <Send className="h-4 w-4" />
             </Button>
