@@ -8,6 +8,7 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useFamily } from "@/hooks/useFamily";
 
 interface Message {
   role: 'user' | 'assistant' | 'tool';
@@ -24,6 +25,7 @@ interface AIChatDialogProps {
 
 export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
   const { user } = useAuth();
+  const { effectiveUserId } = useFamily();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -58,7 +60,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
   }, [open, hasGreeted, messages.length]);
 
   const handleToolCalls = async (toolCalls: any[]) => {
-    if (!user) return;
+    if (!user || !effectiveUserId) return;
 
     for (const toolCall of toolCalls) {
       const functionName = toolCall.function?.name;
@@ -68,7 +70,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
         switch (functionName) {
           case 'create_category':
             await supabase.from('categories').insert({
-              user_id: user.id,
+              user_id: effectiveUserId,
               name: args.name,
               icon: args.icon,
             });
@@ -83,7 +85,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .from('categories')
               .select('id')
               .eq('name', args.category_name)
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .maybeSingle();
 
             if (category) {
@@ -116,7 +118,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
 
           case 'create_income_source':
             await supabase.from('income_sources').insert({
-              user_id: user.id,
+              user_id: effectiveUserId,
               name: args.name,
               amount: args.amount,
               color: '#10b981',
@@ -132,12 +134,12 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .from('categories')
               .select('id')
               .eq('name', args.category_name)
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .single();
 
             if (categories) {
               await supabase.from('expenses').insert({
-                user_id: user.id,
+                user_id: user.id, // Keep original user for tracking
                 category_id: categories.id,
                 amount: args.amount,
                 description: args.description,
@@ -156,12 +158,12 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .from('income_sources')
               .select('id')
               .eq('name', args.source_name)
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .single();
 
             if (sources) {
               await supabase.from('incomes').insert({
-                user_id: user.id,
+                user_id: user.id, // Keep original user for tracking
                 source_id: sources.id,
                 amount: args.amount,
                 description: args.description,
@@ -180,7 +182,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .from('categories')
               .select('id')
               .eq('name', args.old_name)
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .maybeSingle();
 
             if (category) {
@@ -212,7 +214,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .from('categories')
               .select('id')
               .eq('name', args.name)
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .maybeSingle();
 
             if (category) {
@@ -240,7 +242,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .from('income_sources')
               .select('id')
               .eq('name', args.old_name)
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .maybeSingle();
 
             if (source) {
@@ -272,7 +274,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .from('income_sources')
               .select('id')
               .eq('name', args.name)
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .maybeSingle();
 
             if (source) {
@@ -299,7 +301,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             let query = supabase
               .from('expenses')
               .select('id, category_id')
-              .eq('user_id', user.id);
+              .eq('user_id', user.id); // Keep original user for transactions
 
             if (args.description) {
               query = query.eq('description', args.description);
@@ -323,7 +325,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
                   .from('categories')
                   .select('id')
                   .eq('name', args.new_category_name)
-                  .eq('user_id', user.id)
+                  .eq('user_id', effectiveUserId)
                   .single();
                 
                 if (newCategory) {
@@ -354,7 +356,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             let query = supabase
               .from('expenses')
               .select('id')
-              .eq('user_id', user.id);
+              .eq('user_id', user.id); // Keep original user for transactions
 
             if (args.description) {
               query = query.eq('description', args.description);
@@ -392,7 +394,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             let query = supabase
               .from('incomes')
               .select('id, source_id')
-              .eq('user_id', user.id);
+              .eq('user_id', user.id); // Keep original user for transactions
 
             if (args.description) {
               query = query.eq('description', args.description);
@@ -416,7 +418,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
                   .from('income_sources')
                   .select('id')
                   .eq('name', args.new_source_name)
-                  .eq('user_id', user.id)
+                  .eq('user_id', effectiveUserId)
                   .single();
                 
                 if (newSource) {
@@ -447,7 +449,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             let query = supabase
               .from('incomes')
               .select('id')
-              .eq('user_id', user.id);
+              .eq('user_id', user.id); // Keep original user for transactions
 
             if (args.description) {
               query = query.eq('description', args.description);

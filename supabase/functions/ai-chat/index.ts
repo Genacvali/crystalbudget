@@ -7,6 +7,36 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Get family owner ID if user is in a family, otherwise return user_id
+async function getEffectiveUserId(supabase: any, userId: string): Promise<string> {
+  // Check if user is a family owner
+  const { data: ownedFamily } = await supabase
+    .from('families')
+    .select('id, owner_id')
+    .eq('owner_id', userId)
+    .maybeSingle();
+
+  if (ownedFamily) {
+    // User is family owner, use their ID
+    return userId;
+  }
+
+  // Check if user is a family member
+  const { data: membership } = await supabase
+    .from('family_members')
+    .select('family_id, families!inner(owner_id)')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (membership && membership.families) {
+    // User is a family member, use family owner's ID
+    return (membership.families as any).owner_id;
+  }
+
+  // User is not in a family, use their own ID
+  return userId;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -36,16 +66,39 @@ serve(async (req) => {
 
         console.log('Loading context for user:', userId);
 
+        // Get effective user ID (family owner if in family)
+        const effectiveUserId = await getEffectiveUserId(supabase, userId);
+        console.log('Effective user ID:', effectiveUserId);
+
         // Load user's budget context
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
+        // Get all family members if user is in a family
+        let familyUserIds = [userId];
+        const { data: familyMember } = await supabase
+          .from('family_members')
+          .select('family_id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (familyMember) {
+          const { data: familyMembers } = await supabase
+            .from('family_members')
+            .select('user_id')
+            .eq('family_id', familyMember.family_id);
+
+          if (familyMembers) {
+            familyUserIds = familyMembers.map(m => m.user_id);
+          }
+        }
+
         const [categoriesRes, sourcesRes, expensesRes, incomesRes] = await Promise.all([
-          supabase.from('categories').select('*').eq('user_id', userId),
-          supabase.from('income_sources').select('*').eq('user_id', userId),
-          supabase.from('expenses').select('*, categories(name)').eq('user_id', userId).gte('date', startOfMonth).lte('date', endOfMonth),
-          supabase.from('incomes').select('*, income_sources(name)').eq('user_id', userId).gte('date', startOfMonth).lte('date', endOfMonth),
+          supabase.from('categories').select('*').eq('user_id', effectiveUserId),
+          supabase.from('income_sources').select('*').eq('user_id', effectiveUserId),
+          supabase.from('expenses').select('*, categories(name)').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
+          supabase.from('incomes').select('*, income_sources(name)').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
         ]);
 
         const categories = categoriesRes.data || [];
