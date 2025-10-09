@@ -50,10 +50,17 @@ const Transactions = () => {
   const [sortBy, setSortBy] = useState<"date" | "amount">("date");
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
 
   useEffect(() => {
     fetchData();
   }, [selectedDate]);
+
+  useEffect(() => {
+    // Сбрасываем фильтр категории при смене типа транзакции
+    setFilterCategory("all");
+  }, [filterType]);
 
   const fetchData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -246,7 +253,26 @@ const Transactions = () => {
     setDeletingTransaction(null);
   };
 
-  const sortedTransactions = [...transactions].sort((a, b) => {
+  const filteredTransactions = transactions.filter((transaction) => {
+    // Фильтр по типу транзакции
+    if (filterType !== "all" && transaction.type !== filterType) {
+      return false;
+    }
+
+    // Фильтр по категории/источнику
+    if (filterCategory !== "all") {
+      if (transaction.type === "expense" && transaction.categoryId !== filterCategory) {
+        return false;
+      }
+      if (transaction.type === "income" && transaction.sourceId !== filterCategory) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
     if (sortBy === "date") {
       return new Date(b.date).getTime() - new Date(a.date).getTime();
     } else {
@@ -263,16 +289,6 @@ const Transactions = () => {
             <p className="text-sm text-muted-foreground">История доходов и расходов</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Select value={sortBy} onValueChange={(value: "date" | "amount") => setSortBy(value)}>
-              <SelectTrigger className="w-full sm:w-[180px]">
-                <ArrowUpDown className="h-4 w-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="date">По дате</SelectItem>
-                <SelectItem value="amount">По сумме</SelectItem>
-              </SelectContent>
-            </Select>
             <Button
               className="flex-1 sm:flex-none bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
               onClick={() => { setEditingIncome(null); setIncomeDialogOpen(true); }}
@@ -288,6 +304,63 @@ const Transactions = () => {
               <span className="hidden xs:inline">Добавить </span>Расход
             </Button>
           </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Select value={filterType} onValueChange={(value: "all" | "income" | "expense") => setFilterType(value)}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Тип" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все транзакции</SelectItem>
+              <SelectItem value="income">Доходы</SelectItem>
+              <SelectItem value="expense">Расходы</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <SelectTrigger className="w-full sm:w-[220px]">
+              <SelectValue placeholder="Категория/Источник" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все категории</SelectItem>
+              {filterType !== "income" && categories.length > 0 && (
+                <>
+                  <SelectItem value="expenses-header" disabled className="font-semibold">
+                    Категории расходов
+                  </SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.icon} {category.name}
+                    </SelectItem>
+                  ))}
+                </>
+              )}
+              {filterType !== "expense" && incomeSources.length > 0 && (
+                <>
+                  <SelectItem value="incomes-header" disabled className="font-semibold">
+                    Источники дохода
+                  </SelectItem>
+                  {incomeSources.map((source) => (
+                    <SelectItem key={source.id} value={source.id}>
+                      💰 {source.name}
+                    </SelectItem>
+                  ))}
+                </>
+              )}
+            </SelectContent>
+          </Select>
+
+          <Select value={sortBy} onValueChange={(value: "date" | "amount") => setSortBy(value)}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <ArrowUpDown className="h-4 w-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="date">По дате</SelectItem>
+              <SelectItem value="amount">По сумме</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-2 sm:space-y-3">
