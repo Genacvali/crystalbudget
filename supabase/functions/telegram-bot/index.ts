@@ -192,7 +192,7 @@ async function getUserByTelegramId(telegramId: number) {
 }
 
 async function getUserCurrency(userId: string): Promise<string> {
-  const { data, error } = await supabase
+  const { data, error} = await supabase
     .from('user_preferences')
     .select('currency')
     .eq('user_id', userId)
@@ -204,6 +204,36 @@ async function getUserCurrency(userId: string): Promise<string> {
   }
 
   return data?.currency || 'RUB';
+}
+
+// Get family owner ID if user is in a family, otherwise return user_id
+async function getEffectiveUserId(userId: string): Promise<string> {
+  // Check if user is a family owner
+  const { data: ownedFamily } = await supabase
+    .from('families')
+    .select('id, owner_id')
+    .eq('owner_id', userId)
+    .maybeSingle();
+
+  if (ownedFamily) {
+    // User is family owner, use their ID
+    return userId;
+  }
+
+  // Check if user is a family member
+  const { data: membership } = await supabase
+    .from('family_members')
+    .select('family_id, families!inner(owner_id)')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (membership && membership.families) {
+    // User is a family member, use family owner's ID
+    return (membership.families as any).owner_id;
+  }
+
+  // User is not in a family, use their own ID
+  return userId;
 }
 
 function formatAmount(amountInRubles: number, currency: string): string {
@@ -386,8 +416,11 @@ async function handleStart(chatId: number, telegramId: number, firstName: string
 }
 
 async function handleBalance(chatId: number, userId: string) {
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+  
   // Get user currency
-  const currency = await getUserCurrency(userId);
+  const currency = await getUserCurrency(effectiveUserId);
 
   // Check if user has a family
   const { data: familyMember } = await supabase
@@ -470,10 +503,13 @@ async function handleBalance(chatId: number, userId: string) {
 }
 
 async function handleCategories(chatId: number, userId: string) {
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+  
   const { data: categories } = await supabase
     .from('categories')
     .select('name, icon')
-    .eq('user_id', userId)
+    .eq('user_id', effectiveUserId)
     .order('name');
 
   if (!categories || categories.length === 0) {
@@ -497,13 +533,16 @@ async function handleCategories(chatId: number, userId: string) {
 }
 
 async function handleSources(chatId: number, userId: string) {
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+  
   // Get user currency
-  const currency = await getUserCurrency(userId);
+  const currency = await getUserCurrency(effectiveUserId);
 
   const { data: sources } = await supabase
     .from('income_sources')
     .select('name, color, amount')
-    .eq('user_id', userId)
+    .eq('user_id', effectiveUserId)
     .order('name');
 
   if (!sources || sources.length === 0) {
@@ -595,11 +634,14 @@ async function handleSubscription(chatId: number, userId: string) {
 async function startAddExpense(chatId: number, userId: string) {
   console.log(`startAddExpense called for user ${userId}`);
 
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+
   try {
     const { data: categories, error } = await supabase
       .from('categories')
       .select('id, name, icon')
-      .eq('user_id', userId)
+      .eq('user_id', effectiveUserId)
       .order('name')
       .limit(10);
 
@@ -651,11 +693,14 @@ async function startAddExpense(chatId: number, userId: string) {
 async function startAddIncome(chatId: number, userId: string) {
   console.log(`startAddIncome called for user ${userId}`);
 
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+
   try {
-    const { data: sources, error } = await supabase
+    const { data: sources, error} = await supabase
       .from('income_sources')
       .select('id, name')
-      .eq('user_id', userId)
+      .eq('user_id', effectiveUserId)
       .order('name')
       .limit(10);
 
@@ -720,8 +765,11 @@ async function handleCallbackQuery(query: CallbackQuery) {
     return;
   }
 
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+
   // Get user currency
-  const currency = await getUserCurrency(userId);
+  const currency = await getUserCurrency(effectiveUserId);
 
   // Handle expense category selection
   if (data.startsWith('exp_cat_')) {
@@ -1048,8 +1096,11 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
 
   console.log(`handleTextMessage: text="${text}", userId=${userId}`);
 
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+
   // Get user currency
-  const currency = await getUserCurrency(userId);
+  const currency = await getUserCurrency(effectiveUserId);
 
   // Check if user is in a session (adding expense/income)
   const session = await getSession(telegramId);
@@ -1227,8 +1278,11 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
 
   console.log('Voice message received, processing...');
 
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+
   // Get user currency
-  const currency = await getUserCurrency(userId);
+  const currency = await getUserCurrency(effectiveUserId);
 
   await sendTelegramMessage(chatId, '🎤 Распознаю голос...');
 
@@ -1251,8 +1305,8 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
 
     // Get user's categories and income sources
     const [categoriesRes, sourcesRes] = await Promise.all([
-      supabase.from('categories').select('id, name, icon').eq('user_id', userId).order('name'),
-      supabase.from('income_sources').select('id, name').eq('user_id', userId).order('name'),
+      supabase.from('categories').select('id, name, icon').eq('user_id', effectiveUserId).order('name'),
+      supabase.from('income_sources').select('id, name').eq('user_id', effectiveUserId).order('name'),
     ]);
 
     const categories = categoriesRes.data || [];
@@ -1412,8 +1466,11 @@ async function handlePhotoMessage(message: TelegramMessage, userId: string) {
 
   console.log('Photo received, processing receipt...');
 
+  // Get effective user ID (family owner if in family)
+  const effectiveUserId = await getEffectiveUserId(userId);
+
   // Get user currency
-  const currency = await getUserCurrency(userId);
+  const currency = await getUserCurrency(effectiveUserId);
 
   await sendTelegramMessage(chatId, '📸 Сканирую чек...');
 
@@ -1438,7 +1495,7 @@ async function handlePhotoMessage(message: TelegramMessage, userId: string) {
     const { data: categories } = await supabase
       .from('categories')
       .select('name, icon')
-      .eq('user_id', userId);
+      .eq('user_id', effectiveUserId);
 
     if (!categories || categories.length === 0) {
       await sendTelegramMessage(
@@ -1488,7 +1545,7 @@ async function handlePhotoMessage(message: TelegramMessage, userId: string) {
     const { data: allCategories } = await supabase
       .from('categories')
       .select('id, name, icon')
-      .eq('user_id', userId)
+      .eq('user_id', effectiveUserId)
       .order('name');
 
     if (!allCategories || allCategories.length === 0) {
