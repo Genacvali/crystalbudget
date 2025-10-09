@@ -13,6 +13,7 @@ import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { AIChatDialog } from "@/components/AIChatDialog";
 import { QuickGuide } from "@/components/QuickGuide";
 import { TelegramGuide } from "@/components/TelegramGuide";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -68,13 +69,6 @@ const Dashboard = () => {
       }
     }
   }, [user, loading, quickGuideOpen]);
-  useEffect(() => {
-    toast({
-      title: `Переключено на ${format(selectedDate, "LLLL yyyy", {
-        locale: ru
-      })}`
-    });
-  }, [selectedDate]);
   const loadData = async () => {
     try {
       const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1).toISOString();
@@ -340,7 +334,8 @@ const Dashboard = () => {
       </Layout>;
   }
   return <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
-      <div className="space-y-4 sm:space-y-6">
+      <PullToRefresh onRefresh={loadData}>
+        <div className="space-y-4 sm:space-y-6">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           <SummaryCard 
@@ -468,6 +463,7 @@ const Dashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+      </PullToRefresh>
 
       <IncomeDialog open={incomeDialogOpen} onOpenChange={setIncomeDialogOpen} incomeSources={incomeSources} onSave={handleAddIncome} onSourceCreated={loadData} />
 

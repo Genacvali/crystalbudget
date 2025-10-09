@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const { messages, userId } = await req.json();
 
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 
@@ -20,7 +21,80 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY is not configured');
     }
 
-    console.log('Processing chat request with', messages.length, 'messages');
+    console.log('Processing chat request with', messages.length, 'messages', 'userId:', userId);
+
+    // Try to get user context
+    let budgetContext = '';
+    try {
+      if (userId) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        console.log('Supabase URL:', supabaseUrl ? 'present' : 'missing');
+        console.log('Service Key:', supabaseServiceKey ? 'present' : 'missing');
+
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+        console.log('Loading context for user:', userId);
+
+        // Load user's budget context
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+        const [categoriesRes, sourcesRes, expensesRes, incomesRes] = await Promise.all([
+          supabase.from('categories').select('*').eq('user_id', userId),
+          supabase.from('income_sources').select('*').eq('user_id', userId),
+          supabase.from('expenses').select('*, categories(name)').eq('user_id', userId).gte('date', startOfMonth).lte('date', endOfMonth),
+          supabase.from('incomes').select('*, income_sources(name)').eq('user_id', userId).gte('date', startOfMonth).lte('date', endOfMonth),
+        ]);
+
+        const categories = categoriesRes.data || [];
+        const sources = sourcesRes.data || [];
+        const expenses = expensesRes.data || [];
+        const incomes = incomesRes.data || [];
+
+        console.log('Loaded data:', {
+          categories: categories.length,
+          sources: sources.length,
+          expenses: expenses.length,
+          incomes: incomes.length
+        });
+
+        // Calculate totals
+        const totalIncome = incomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+        const totalExpense = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+        const balance = totalIncome - totalExpense;
+
+        console.log('Budget summary:', { totalIncome, totalExpense, balance });
+
+        // Build context for AI
+        budgetContext = `
+
+ТЕКУЩИЙ КОНТЕКСТ БЮДЖЕТА ПОЛЬЗОВАТЕЛЯ:
+
+📊 Баланс за текущий месяц:
+- Доход: ${totalIncome} ₽
+- Расход: ${totalExpense} ₽
+- Остаток: ${balance} ₽
+
+💰 Источники дохода (${sources.length}):
+${sources.map(s => `- "${s.name}": ${s.amount || 0} ₽`).join('\n') || '(нет источников)'}
+
+🏷️ Категории расходов (${categories.length}):
+${categories.map(c => `- ${c.icon} "${c.name}" (лимит: ${c.allocation_amount || 0} ₽, процент: ${c.allocation_percent || 0}%)`).join('\n') || '(нет категорий)'}
+
+📈 Последние доходы (${incomes.length}):
+${incomes.slice(0, 5).map(i => `- ${i.amount} ₽ (${i.income_sources?.name || 'неизвестно'}) - ${i.description || 'без описания'}`).join('\n') || '(нет доходов)'}
+
+📉 Последние расходы (${expenses.length}):
+${expenses.slice(0, 5).map(e => `- ${e.amount} ₽ (${e.categories?.name || 'неизвестно'}) - ${e.description || 'без описания'}`).join('\n') || '(нет расходов)'}
+
+Используй этот контекст для ответов на вопросы пользователя о его финансах, анализа расходов и доходов, и предоставления рекомендаций.`;
+      }
+    } catch (contextError) {
+      console.error('Failed to load user context:', contextError);
+      // Continue without context
+    }
 
     const tools = [
       {
@@ -246,7 +320,7 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: 'Ты - профессиональный финансовый аналитик и помощник по управлению бюджетом. Ты можешь создавать, редактировать и удалять категории, источники дохода, доходы и расходы, а также настраивать проценты и лимиты для категорий. Когда пользователь просит создать, изменить или удалить что-то, используй доступные инструменты. ВАЖНО: ты НЕ можешь изменять настройки профиля пользователя, семьи или личный кабинет. Отвечай кратко и по делу, на русском языке.'
+            content: `Ты - профессиональный финансовый аналитик и помощник по управлению бюджетом. Ты можешь создавать, редактировать и удалять категории, источники дохода, доходы и расходы, а также настраивать проценты и лимиты для категорий. Когда пользователь просит создать, изменить или удалить что-то, используй доступные инструменты. ВАЖНО: ты НЕ можешь изменять настройки профиля пользователя, семьи или личный кабинет. Отвечай кратко и по делу, на русском языке.${budgetContext}`
           },
           ...messages
         ],
