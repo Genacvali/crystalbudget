@@ -195,6 +195,24 @@ serve(async (req) => {
           })));
         }
 
+        if (categories.length > 0) {
+          console.log('🏷️ Sample categories with allocations:', categories.slice(0, 3).map(c => {
+            const categoryAllocations = allocations.filter(a => a.category_id === c.id);
+            return {
+              id: c.id,
+              name: c.name,
+              icon: c.icon,
+              allocation_amount: c.allocation_amount,
+              allocation_percent: c.allocation_percent,
+              allocations: categoryAllocations.map(a => ({
+                type: a.allocation_type,
+                value: a.allocation_value,
+                source_id: a.income_source_id
+              }))
+            };
+          }));
+        }
+
         // Calculate totals
         const totalIncome = incomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
         const totalExpense = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
@@ -216,7 +234,37 @@ serve(async (req) => {
 ${sources.map(s => `- "${s.name}": ${s.amount || 0} ₽`).join('\n') || '(нет источников)'}
 
 🏷️ Категории расходов (${categories.length}):
-${categories.map(c => `- ${c.icon} "${c.name}" (лимит: ${c.allocation_amount || 0} ₽, процент: ${c.allocation_percent || 0}%)`).join('\n') || '(нет категорий)'}
+${categories.map(c => {
+  const categoryAllocations = allocations.filter(a => a.category_id === c.id);
+  let totalAllocated = 0;
+  let allocationDetails: string[] = [];
+  
+  // Суммируем все выделения для категории
+  categoryAllocations.forEach(allocation => {
+    const source = sources.find(s => s.id === allocation.income_source_id);
+    if (source) {
+      if (allocation.allocation_type === 'amount') {
+        totalAllocated += Number(allocation.allocation_value);
+        allocationDetails.push(`${source.name}: ${allocation.allocation_value} ₽`);
+      } else if (allocation.allocation_type === 'percent') {
+        const sourceAmount = Number(source.amount) || 0;
+        const allocatedAmount = (sourceAmount * Number(allocation.allocation_value)) / 100;
+        totalAllocated += allocatedAmount;
+        allocationDetails.push(`${source.name}: ${allocation.allocation_value}%`);
+      }
+    }
+  });
+  
+  // Добавляем старые поля для совместимости
+  if (c.allocation_amount) totalAllocated += Number(c.allocation_amount);
+  if (c.allocation_percent) {
+    const totalIncome = sources.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    totalAllocated += (totalIncome * Number(c.allocation_percent)) / 100;
+  }
+  
+  const details = allocationDetails.length > 0 ? ` (${allocationDetails.join(', ')})` : '';
+  return `- ${c.icon} "${c.name}" (лимит: ${totalAllocated.toFixed(2)} ₽${details})`;
+}).join('\n') || '(нет категорий)'}
 
 📈 Последние доходы (${incomes.length}):
 ${incomes.slice(0, 5).map(i => `- ${i.amount} ₽ (ID источника: ${i.source_id}) - ${i.description || 'без описания'}`).join('\n') || '(нет доходов)'}
