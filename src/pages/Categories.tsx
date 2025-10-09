@@ -29,6 +29,7 @@ const Categories = () => {
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+  const [expenses, setExpenses] = useState<Array<{ category_id: string; amount: number }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -92,6 +93,16 @@ const Categories = () => {
         .select('*');
 
       if (allocationsError) throw allocationsError;
+
+      // Load expenses for current month
+      const { data: expensesData, error: expensesError } = await supabase
+        .from('expenses')
+        .select('category_id, amount')
+        .gte('date', startOfMonth)
+        .lte('date', endOfMonth);
+
+      if (expensesError) throw expensesError;
+      setExpenses(expensesData || []);
 
       const mappedCategories: Category[] = (categoriesData || []).map(item => {
         const categoryAllocations = (allocationsData || [])
@@ -267,11 +278,16 @@ const Categories = () => {
       }
     }
 
+    // Calculate spent amount from expenses
+    const spent = expenses
+      .filter(expense => expense.category_id === category.id)
+      .reduce((sum, expense) => sum + Number(expense.amount), 0);
+
     return {
       categoryId: category.id,
       allocated,
-      spent: 0, // TODO: Calculate from expenses
-      remaining: allocated,
+      spent,
+      remaining: allocated - spent,
     };
   };
 

@@ -13,7 +13,7 @@ import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { AIChatDialog } from "@/components/AIChatDialog";
 import { QuickGuide } from "@/components/QuickGuide";
 import { TelegramGuide } from "@/components/TelegramGuide";
-import { PullToRefresh } from "@/components/PullToRefresh";
+// import { PullToRefresh } from "@/components/PullToRefresh";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -260,9 +260,28 @@ const Dashboard = () => {
       });
 
       // Calculate expenses linked to this source (for totalSpent display)
-      const linkedCategories = categories.filter(cat => cat.linkedSourceId === source.id);
-      const linkedCategoryIds = linkedCategories.map(cat => cat.id);
-      const totalSpent = expenses.filter(exp => linkedCategoryIds.includes(exp.category_id)).reduce((sum, exp) => sum + Number(exp.amount), 0);
+      // Include both new allocation system and legacy linkedSourceId
+      const linkedCategoryIds: string[] = [];
+      
+      categories.forEach(category => {
+        // New allocation system
+        if (category.allocations && category.allocations.length > 0) {
+          const hasAllocationFromSource = category.allocations.some(
+            alloc => alloc.incomeSourceId === source.id
+          );
+          if (hasAllocationFromSource) {
+            linkedCategoryIds.push(category.id);
+          }
+        }
+        // Legacy system
+        else if (category.linkedSourceId === source.id) {
+          linkedCategoryIds.push(category.id);
+        }
+      });
+      
+      const totalSpent = expenses
+        .filter(exp => linkedCategoryIds.includes(exp.category_id))
+        .reduce((sum, exp) => sum + Number(exp.amount), 0);
       
       // Remaining is based on allocated amounts, not spent
       const remaining = totalIncome - totalAllocated;
@@ -334,7 +353,7 @@ const Dashboard = () => {
       </Layout>;
   }
   return <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
-      <PullToRefresh onRefresh={loadData}>
+      {/* <PullToRefresh onRefresh={loadData}> */}
         <div className="space-y-4 sm:space-y-6">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -463,7 +482,7 @@ const Dashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
-      </PullToRefresh>
+      {/* </PullToRefresh> */}
 
       <IncomeDialog open={incomeDialogOpen} onOpenChange={setIncomeDialogOpen} incomeSources={incomeSources} onSave={handleAddIncome} onSourceCreated={loadData} />
 
