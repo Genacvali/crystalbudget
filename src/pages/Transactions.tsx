@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/useCurrency";
 import { IncomeDialog } from "@/components/IncomeDialog";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,6 +39,7 @@ interface Transaction {
 const Transactions = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
+  const { formatAmount } = useCurrency();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -338,7 +340,7 @@ const Transactions = () => {
                           : "text-destructive"
                       }`}>
                         {transaction.type === "income" ? "+" : "-"}
-                        {transaction.amount.toLocaleString('ru-RU')} ₽
+                        {formatAmount(transaction.amount)}
                       </p>
                       <div className="flex gap-1">
                         <Button
@@ -399,7 +401,7 @@ const Transactions = () => {
                 <>
                   Вы уверены что хотите удалить {deletingTransaction.type === "income" ? "доход" : "расход"}{" "}
                   <span className="font-semibold">
-                    {deletingTransaction.amount.toLocaleString('ru-RU')} ₽
+                    {formatAmount(deletingTransaction.amount)}
                   </span>{" "}
                   ({deletingTransaction.category})?
                   <br />
