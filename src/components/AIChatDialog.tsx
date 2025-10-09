@@ -736,7 +736,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
         setHasGreeted(false);
       }
     }}>
-      <DialogContent className="max-w-2xl h-[85vh] sm:h-[70vh] flex flex-col p-0 mx-2 sm:mx-0">
+      <DialogContent className="w-[min(100vw-2rem,42rem)] sm:w-full sm:max-w-2xl h-[85vh] sm:h-[70vh] flex flex-col p-0">
         <DialogHeader className="px-4 pt-4 pb-2 border-b">
           <DialogTitle className="text-lg font-medium">
             G.A.I.A.
