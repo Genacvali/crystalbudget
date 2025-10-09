@@ -141,11 +141,12 @@ serve(async (req) => {
           totalIncomesError: totalIncomesRes.error
         });
 
-        const [categoriesRes, sourcesRes, expensesRes, incomesRes] = await Promise.all([
+        const [categoriesRes, sourcesRes, expensesRes, incomesRes, allocationsRes] = await Promise.all([
           supabase.from('categories').select('*').eq('user_id', effectiveUserId),
           supabase.from('income_sources').select('*').eq('user_id', effectiveUserId),
           supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
           supabase.from('incomes').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth),
+          supabase.from('category_allocations').select('*'),
         ]);
 
         // Log any errors
@@ -153,11 +154,13 @@ serve(async (req) => {
         if (sourcesRes.error) console.error('Sources error:', sourcesRes.error);
         if (expensesRes.error) console.error('Expenses error:', expensesRes.error);
         if (incomesRes.error) console.error('Incomes error:', incomesRes.error);
+        if (allocationsRes.error) console.error('Allocations error:', allocationsRes.error);
 
         const categories = categoriesRes.data || [];
         const sources = sourcesRes.data || [];
         const expenses = expensesRes.data || [];
         const incomes = incomesRes.data || [];
+        const allocations = allocationsRes.data || [];
 
         console.log('📊 Loaded data summary:', {
           userId: userId,
@@ -167,6 +170,7 @@ serve(async (req) => {
           sources: sources.length,
           expenses: expenses.length,
           incomes: incomes.length,
+          allocations: allocations.length,
           dateRange: { startOfMonth, endOfMonth }
         });
 

@@ -34,6 +34,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
@@ -56,6 +57,10 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
         };
         setMessages([welcomeMessage]);
       }
+      // Фокусируемся на поле ввода при открытии диалога
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 300);
     }
   }, [open, hasGreeted, messages.length]);
 
@@ -680,6 +685,10 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
       });
     } finally {
       setIsLoading(false);
+      // Возвращаем фокус в поле ввода
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 300);
     }
   };
 
@@ -727,23 +736,23 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
         setHasGreeted(false);
       }
     }}>
-      <DialogContent className="max-w-2xl h-[70vh] flex flex-col p-0">
+      <DialogContent className="max-w-2xl h-[85vh] sm:h-[70vh] flex flex-col p-0 mx-2 sm:mx-0">
         <DialogHeader className="px-4 pt-4 pb-2 border-b">
           <DialogTitle className="text-lg font-medium">
             AI Ассистент
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-4" ref={scrollRef}>
-          <div className="space-y-3 py-3">
+        <ScrollArea className="flex-1 px-3 sm:px-4" ref={scrollRef}>
+          <div className="space-y-2 sm:space-y-3 py-2 sm:py-3">
             {messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={cn(
-                  "flex gap-2 p-3 rounded-lg",
+                  "flex gap-2 p-2 sm:p-3 rounded-lg",
                   msg.role === 'user'
-                    ? "bg-primary/10 ml-6"
-                    : "bg-muted/30 mr-6"
+                    ? "bg-primary/10 ml-4 sm:ml-6"
+                    : "bg-muted/30 mr-4 sm:mr-6"
                 )}
               >
                 <div className="flex-1 text-sm">
@@ -753,7 +762,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             ))}
             
             {isLoading && (
-              <div className="flex gap-2 p-3 rounded-lg bg-muted mr-6">
+              <div className="flex gap-2 p-2 sm:p-3 rounded-lg bg-muted mr-4 sm:mr-6">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 <span className="text-sm text-muted-foreground">Думаю...</span>
               </div>
@@ -763,7 +772,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
           </div>
         </ScrollArea>
 
-        <div className="px-4 pb-4">
+        <div className="px-3 sm:px-4 pb-3 sm:pb-4">
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
               {attachments.map((att, idx) => (
@@ -771,7 +780,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
                   key={idx}
                   className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs"
                 >
-                  <span className="max-w-[100px] truncate">{att.name}</span>
+                  <span className="max-w-[80px] sm:max-w-[100px] truncate">{att.name}</span>
                   <Button
                     type="button"
                     variant="ghost"
@@ -802,12 +811,13 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               size="icon"
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading}
-              className="h-10 w-10"
+              className="h-9 w-9 sm:h-10 sm:w-10"
             >
               <Paperclip className="h-4 w-4" />
             </Button>
 
             <Textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -816,8 +826,14 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
                   sendMessage();
                 }
               }}
+              onClick={() => {
+                // Дополнительная фокусировка при клике на мобильных устройствах
+                setTimeout(() => {
+                  textareaRef.current?.focus();
+                }, 50);
+              }}
               placeholder="Напишите сообщение..."
-              className="min-h-[40px] resize-none text-sm"
+              className="min-h-[36px] sm:min-h-[40px] resize-none text-sm"
               disabled={isLoading}
             />
 
@@ -825,7 +841,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               onClick={sendMessage}
               disabled={isLoading || (!input.trim() && attachments.length === 0)}
               size="icon"
-              className="h-10 w-10"
+              className="h-9 w-9 sm:h-10 sm:w-10"
             >
               <Send className="h-4 w-4" />
             </Button>
