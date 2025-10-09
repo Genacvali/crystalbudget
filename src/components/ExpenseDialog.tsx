@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/useCurrency";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
@@ -34,6 +35,7 @@ interface ExpenseDialogProps {
 
 export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingExpense }: ExpenseDialogProps) {
   const { toast } = useToast();
+  const { convertToRubles, convertFromRubles } = useCurrency();
   const [categoryId, setCategoryId] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -43,7 +45,9 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
   useEffect(() => {
     if (open && editingExpense) {
       setCategoryId(editingExpense.categoryId);
-      setAmount(editingExpense.amount.toString());
+      // Конвертируем сумму из рублей в текущую валюту для отображения
+      const convertedAmount = convertFromRubles(editingExpense.amount);
+      setAmount(convertedAmount.toString());
       setDate(new Date(editingExpense.date));
       setDescription(editingExpense.description || "");
     } else if (!open) {
@@ -52,7 +56,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
       setDate(new Date());
       setDescription("");
     }
-  }, [open, editingExpense]);
+  }, [open, editingExpense, convertFromRubles]);
 
   const handleSave = () => {
     try {
@@ -63,9 +67,12 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         description: description.trim() || undefined,
       });
 
+      // Конвертируем сумму в рубли перед сохранением
+      const amountInRubles = convertToRubles(validated.amount);
+
       onSave({
         categoryId: validated.categoryId,
-        amount: validated.amount,
+        amount: amountInRubles,
         date: validated.date,
         description: validated.description,
       });

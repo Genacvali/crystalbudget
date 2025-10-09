@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/useCurrency";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon, Plus } from "lucide-react";
@@ -39,6 +40,7 @@ interface IncomeDialogProps {
 export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editingIncome, onSourceCreated }: IncomeDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { convertToRubles, convertFromRubles } = useCurrency();
   const [sourceId, setSourceId] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -77,7 +79,9 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
   useEffect(() => {
     if (open && editingIncome) {
       setSourceId(editingIncome.sourceId);
-      setAmount(editingIncome.amount.toString());
+      // Конвертируем сумму из рублей в текущую валюту для отображения
+      const convertedAmount = convertFromRubles(editingIncome.amount);
+      setAmount(convertedAmount.toString());
       setDate(new Date(editingIncome.date));
       setDescription(editingIncome.description || "");
     } else if (!open) {
@@ -86,7 +90,7 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
       setDate(new Date());
       setDescription("");
     }
-  }, [open, editingIncome]);
+  }, [open, editingIncome, convertFromRubles]);
 
   const handleSave = () => {
     try {
@@ -97,9 +101,12 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
         description: description.trim() || undefined,
       });
 
+      // Конвертируем сумму в рубли перед сохранением
+      const amountInRubles = convertToRubles(validated.amount);
+
       onSave({
         sourceId: validated.sourceId,
-        amount: validated.amount,
+        amount: amountInRubles,
         date: validated.date,
         description: validated.description,
       });

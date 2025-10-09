@@ -11,6 +11,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Примерные курсы валют к рублю (можно заменить на API)
+const exchangeRates: Record<string, number> = {
+  RUB: 1,
+  USD: 0.01, // 1 USD = 100 RUB
+  EUR: 0.011, // 1 EUR = 90 RUB
+  GBP: 0.012, // 1 GBP = 85 RUB
+  JPY: 0.067, // 1 JPY = 15 RUB
+  CNY: 0.014, // 1 CNY = 70 RUB
+  KRW: 0.0075, // 1 KRW = 130 RUB
+  GEL: 0.033, // 1 GEL = 30 RUB
+  AMD: 0.025, // 1 AMD = 40 RUB
+};
+
 // Currency symbols mapping
 const currencySymbols: Record<string, string> = {
   RUB: '₽',
@@ -193,9 +206,17 @@ async function getUserCurrency(userId: string): Promise<string> {
   return data?.currency || 'RUB';
 }
 
-function formatAmount(amount: number, currency: string): string {
+function formatAmount(amountInRubles: number, currency: string): string {
+  const rate = exchangeRates[currency] || 1;
+  const convertedAmount = amountInRubles * rate;
   const symbol = currencySymbols[currency] || '₽';
-  return `${amount.toLocaleString('ru-RU')} ${symbol}`;
+  return `${convertedAmount.toLocaleString('ru-RU')} ${symbol}`;
+}
+
+// Конвертирует сумму из выбранной валюты в рубли
+function convertToRubles(amount: number, currency: string): number {
+  const rate = exchangeRates[currency] || 1;
+  return amount / rate;
 }
 
 async function hasActiveSubscription(userId: string): Promise<boolean> {
@@ -734,7 +755,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
       .insert({
         user_id: userId,
         category_id: categoryId,
-        amount: receiptData.amount,
+        amount: convertToRubles(receiptData.amount, currency),
         description: receiptData.description || receiptData.store,
         date: expenseDate,
       })
@@ -796,7 +817,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
       .insert({
         user_id: userId,
         category_id: categoryId,
-        amount: session.amount,
+        amount: convertToRubles(session.amount, currency),
         description: session.description,
         date: new Date().toISOString(),
       });
@@ -849,7 +870,7 @@ async function handleCallbackQuery(query: CallbackQuery) {
       .insert({
         user_id: userId,
         source_id: sourceId,
-        amount: session.amount,
+        amount: convertToRubles(session.amount, currency),
         description: session.description,
         date: new Date().toISOString(),
       });
@@ -1009,7 +1030,7 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
         .from('expenses')
         .insert({
           user_id: userId,
-          amount: amount,
+          amount: convertToRubles(amount, currency),
           category_id: session.categoryId,
           description: description,
           date: new Date().toISOString(),
@@ -1031,7 +1052,7 @@ async function handleTextMessage(message: TelegramMessage, userId: string) {
         .from('incomes')
         .insert({
           user_id: userId,
-          amount: amount,
+          amount: convertToRubles(amount, currency),
           source_id: session.sourceId,
           description: description,
           date: new Date().toISOString(),
@@ -1235,7 +1256,7 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
       // Store in session for confirmation
       await setSession(telegramId, {
         type: 'voice_expense_confirmation',
-        amount: voiceData.amount,
+        amount: convertToRubles(voiceData.amount, currency),
         description: voiceData.description,
         transcribedText: voiceData.transcribedText,
         suggestedCategory: voiceData.category,
@@ -1282,7 +1303,7 @@ async function handleVoiceMessage(message: TelegramMessage, userId: string) {
       // Store in session for confirmation
       await setSession(telegramId, {
         type: 'voice_income_confirmation',
-        amount: voiceData.amount,
+        amount: convertToRubles(voiceData.amount, currency),
         description: voiceData.description,
         transcribedText: voiceData.transcribedText,
         suggestedSource: voiceData.category,
