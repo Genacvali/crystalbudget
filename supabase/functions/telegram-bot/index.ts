@@ -521,15 +521,32 @@ async function handleCategories(chatId: number, userId: string) {
     return;
   }
 
-  const categoryList = categories
-    .map(cat => `${cat.icon} ${cat.name}`)
-    .join('\n');
+  // Split categories into chunks to avoid Telegram message length limit (4096 chars)
+  const chunkSize = 30; // ~30 categories per message
+  const chunks = [];
+  for (let i = 0; i < categories.length; i += chunkSize) {
+    chunks.push(categories.slice(i, i + chunkSize));
+  }
 
+  // Send first chunk with header
+  const firstChunk = chunks[0];
+  const firstList = firstChunk.map(cat => `${cat.icon} ${cat.name}`).join('\n');
   await sendTelegramMessage(
     chatId,
-    `📁 <b>Ваши категории (${categories.length}):</b>\n\n${categoryList}`,
-    getMainKeyboard()
+    `📁 <b>Ваши категории (${categories.length}):</b>\n\n${firstList}${chunks.length > 1 ? '\n\n⬇️ Продолжение...' : ''}`,
+    chunks.length === 1 ? getMainKeyboard() : undefined
   );
+
+  // Send remaining chunks
+  for (let i = 1; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const list = chunk.map(cat => `${cat.icon} ${cat.name}`).join('\n');
+    await sendTelegramMessage(
+      chatId,
+      `${list}${i < chunks.length - 1 ? '\n\n⬇️ Продолжение...' : ''}`,
+      i === chunks.length - 1 ? getMainKeyboard() : undefined
+    );
+  }
 }
 
 async function handleSources(chatId: number, userId: string) {
@@ -554,18 +571,42 @@ async function handleSources(chatId: number, userId: string) {
     return;
   }
 
-  const sourceList = sources
+  // Split sources into chunks to avoid Telegram message length limit (4096 chars)
+  const chunkSize = 30; // ~30 sources per message
+  const chunks = [];
+  for (let i = 0; i < sources.length; i += chunkSize) {
+    chunks.push(sources.slice(i, i + chunkSize));
+  }
+
+  // Send first chunk with header
+  const firstChunk = chunks[0];
+  const firstList = firstChunk
     .map(src => {
       const amount = src.amount ? ` (${formatAmount(Number(src.amount), currency)})` : '';
       return `💵 ${src.name}${amount}`;
     })
     .join('\n');
-
   await sendTelegramMessage(
     chatId,
-    `💵 <b>Ваши источники дохода (${sources.length}):</b>\n\n${sourceList}`,
-    getMainKeyboard()
+    `💵 <b>Ваши источники дохода (${sources.length}):</b>\n\n${firstList}${chunks.length > 1 ? '\n\n⬇️ Продолжение...' : ''}`,
+    chunks.length === 1 ? getMainKeyboard() : undefined
   );
+
+  // Send remaining chunks
+  for (let i = 1; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const list = chunk
+      .map(src => {
+        const amount = src.amount ? ` (${formatAmount(Number(src.amount), currency)})` : '';
+        return `💵 ${src.name}${amount}`;
+      })
+      .join('\n');
+    await sendTelegramMessage(
+      chatId,
+      `${list}${i < chunks.length - 1 ? '\n\n⬇️ Продолжение...' : ''}`,
+      i === chunks.length - 1 ? getMainKeyboard() : undefined
+    );
+  }
 }
 
 async function handleSubscription(chatId: number, userId: string) {
@@ -642,8 +683,7 @@ async function startAddExpense(chatId: number, userId: string) {
       .from('categories')
       .select('id, name, icon')
       .eq('user_id', effectiveUserId)
-      .order('name')
-      .limit(10);
+      .order('name');
 
     console.log(`Categories query result: ${categories?.length || 0} categories, error: ${error?.message || 'none'}`);
 
@@ -701,8 +741,7 @@ async function startAddIncome(chatId: number, userId: string) {
       .from('income_sources')
       .select('id, name')
       .eq('user_id', effectiveUserId)
-      .order('name')
-      .limit(10);
+      .order('name');
 
     console.log(`Sources query result: ${sources?.length || 0} sources, error: ${error?.message || 'none'}`);
 
