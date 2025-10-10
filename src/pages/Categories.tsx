@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, ArrowUpDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CategoryCard } from "@/components/CategoryCard";
 import { CategoryDialog } from "@/components/CategoryDialog";
 import { Category, IncomeSource, CategoryBudget } from "@/types/budget";
@@ -31,6 +32,7 @@ const Categories = () => {
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [expenses, setExpenses] = useState<Array<{ category_id: string; amount: number }>>([]);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<"name" | "spent" | "remaining">("name");
 
   useEffect(() => {
     if (user) {
@@ -301,22 +303,52 @@ const Categories = () => {
     );
   }
 
+  // Sort categories
+  const sortedCategories = [...categories].sort((a, b) => {
+    const budgetA = getCategoryBudget(a);
+    const budgetB = getCategoryBudget(b);
+
+    switch (sortBy) {
+      case "name":
+        return a.name.localeCompare(b.name);
+      case "spent":
+        return budgetB.spent - budgetA.spent;
+      case "remaining":
+        return budgetB.remaining - budgetA.remaining;
+      default:
+        return 0;
+    }
+  });
+
   return (
     <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold">Категории расходов</h1>
             <p className="text-muted-foreground">Управление категориями и бюджетами</p>
           </div>
-          <Button onClick={handleAddCategory}>
-            <Plus className="h-4 w-4 mr-2" />
-            Добавить категорию
-          </Button>
+          <div className="flex gap-2">
+            <Select value={sortBy} onValueChange={(value: "name" | "spent" | "remaining") => setSortBy(value)}>
+              <SelectTrigger className="w-[180px]">
+                <ArrowUpDown className="h-4 w-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">По названию</SelectItem>
+                <SelectItem value="spent">По потраченному</SelectItem>
+                <SelectItem value="remaining">По остатку</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleAddCategory}>
+              <Plus className="h-4 w-4 mr-2" />
+              Добавить категорию
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-          {categories.map((category) => (
+          {sortedCategories.map((category) => (
             <CategoryCard
               key={category.id}
               category={category}

@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { TrendingUp, TrendingDown, PiggyBank, Plus, Wallet, FolderOpen, BarChart3, Bot } from "lucide-react";
+import { TrendingUp, TrendingDown, PiggyBank, Plus, Wallet, FolderOpen, BarChart3, Bot, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Layout } from "@/components/Layout";
 import { SummaryCard } from "@/components/SummaryCard";
 import { IncomeSourceCard } from "@/components/IncomeSourceCard";
@@ -43,6 +44,7 @@ const Dashboard = () => {
   const [quickGuideOpen, setQuickGuideOpen] = useState(false);
   const [telegramGuideOpen, setTelegramGuideOpen] = useState(false);
   const [carryOverBalance, setCarryOverBalance] = useState(0);
+  const [categorySortBy, setCategorySortBy] = useState<"name" | "spent" | "remaining">("name");
   useEffect(() => {
     if (user) {
       loadData();
@@ -437,17 +439,45 @@ const Dashboard = () => {
             </section>
 
             <section className="space-y-2 sm:space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
                   <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                   <span>Категории расходов</span>
                 </h2>
-                <span className="text-xs sm:text-sm text-muted-foreground">
-                  {categories.length}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs sm:text-sm text-muted-foreground">
+                    {categories.length}
+                  </span>
+                  <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <ArrowUpDown className="h-3 w-3 mr-1" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name">Название</SelectItem>
+                      <SelectItem value="spent">Потрачено</SelectItem>
+                      <SelectItem value="remaining">Остаток</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               {categories.length > 0 ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
-                  {categories.map(category => {
+                  {[...categories].sort((a, b) => {
+                    const budgetA = categoryBudgets.find(b => b.categoryId === a.id);
+                    const budgetB = categoryBudgets.find(b => b.categoryId === b.id);
+                    if (!budgetA || !budgetB) return 0;
+                    
+                    switch (categorySortBy) {
+                      case "name":
+                        return a.name.localeCompare(b.name);
+                      case "spent":
+                        return budgetB.spent - budgetA.spent;
+                      case "remaining":
+                        return budgetB.remaining - budgetA.remaining;
+                      default:
+                        return 0;
+                    }
+                  }).map(category => {
                 const budget = categoryBudgets.find(b => b.categoryId === category.id);
                 return budget ? <CategoryCard key={category.id} category={category} budget={budget} incomeSources={incomeSources} /> : null;
               })}
@@ -472,9 +502,35 @@ const Dashboard = () => {
           <TabsContent value="categories" className="space-y-3 sm:space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg sm:text-xl font-bold">Категории расходов</h2>
+              <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
+                <SelectTrigger className="w-[160px]">
+                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">По названию</SelectItem>
+                  <SelectItem value="spent">По потраченному</SelectItem>
+                  <SelectItem value="remaining">По остатку</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {categories.length > 0 ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
-                {categories.map(category => {
+                {[...categories].sort((a, b) => {
+                  const budgetA = categoryBudgets.find(b => b.categoryId === a.id);
+                  const budgetB = categoryBudgets.find(b => b.categoryId === b.id);
+                  if (!budgetA || !budgetB) return 0;
+                  
+                  switch (categorySortBy) {
+                    case "name":
+                      return a.name.localeCompare(b.name);
+                    case "spent":
+                      return budgetB.spent - budgetA.spent;
+                    case "remaining":
+                      return budgetB.remaining - budgetA.remaining;
+                    default:
+                      return 0;
+                  }
+                }).map(category => {
               const budget = categoryBudgets.find(b => b.categoryId === category.id);
               return budget ? <CategoryCard key={category.id} category={category} budget={budget} incomeSources={incomeSources} /> : null;
             })}
