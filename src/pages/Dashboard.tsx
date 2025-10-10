@@ -449,13 +449,12 @@ const Dashboard = () => {
                     {categories.length}
                   </span>
                   <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
-                    <SelectTrigger className="w-[140px] h-8 text-xs">
-                      <ArrowUpDown className="h-3 w-3 mr-1" />
+                    <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="name">Название</SelectItem>
-                      <SelectItem value="spent">Потрачено</SelectItem>
+                      <SelectItem value="name">Имя</SelectItem>
+                      <SelectItem value="spent">Траты</SelectItem>
                       <SelectItem value="remaining">Остаток</SelectItem>
                     </SelectContent>
                   </Select>
@@ -463,8 +462,8 @@ const Dashboard = () => {
               </div>
               {categories.length > 0 ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
                   {[...categories].sort((a, b) => {
-                    const budgetA = categoryBudgets.find(b => b.categoryId === a.id);
-                    const budgetB = categoryBudgets.find(b => b.categoryId === b.id);
+                    const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
+                    const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
                     if (!budgetA || !budgetB) return 0;
                     
                     switch (categorySortBy) {
@@ -516,8 +515,8 @@ const Dashboard = () => {
             </div>
             {categories.length > 0 ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
                 {[...categories].sort((a, b) => {
-                  const budgetA = categoryBudgets.find(b => b.categoryId === a.id);
-                  const budgetB = categoryBudgets.find(b => b.categoryId === b.id);
+                  const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
+                  const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
                   if (!budgetA || !budgetB) return 0;
                   
                   switch (categorySortBy) {

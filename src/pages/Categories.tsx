@@ -328,19 +328,18 @@ const Categories = () => {
             <h1 className="text-3xl font-bold">Категории расходов</h1>
             <p className="text-muted-foreground">Управление категориями и бюджетами</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Select value={sortBy} onValueChange={(value: "name" | "spent" | "remaining") => setSortBy(value)}>
-              <SelectTrigger className="w-[180px]">
-                <ArrowUpDown className="h-4 w-4 mr-2" />
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="name">По названию</SelectItem>
-                <SelectItem value="spent">По потраченному</SelectItem>
-                <SelectItem value="remaining">По остатку</SelectItem>
+                <SelectItem value="name">Имя</SelectItem>
+                <SelectItem value="spent">Траты</SelectItem>
+                <SelectItem value="remaining">Остаток</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={handleAddCategory}>
+            <Button onClick={handleAddCategory} className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               Добавить категорию
             </Button>
