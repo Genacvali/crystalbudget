@@ -1,73 +1,107 @@
-# Welcome to your Lovable project
+# CrystalBudget
 
-## Project info
+![CrystalBudget Logo](src/assets/crystal-logo.png)
 
-**URL**: https://lovable.dev/projects/216b85ca-b369-4495-a8ba-03c616447a03
+**CrystalBudget** is a transparent and intuitive personal finance management app designed to help you track expenses, manage income sources, and allocate budgets effectively. With features like family sharing, AI-powered insights, and Telegram bot integration, it makes budgeting simple and accessible.
 
-## How can I edit this code?
+## Key Features
 
-There are several ways of editing your application.
+- **Custom Categories & Allocations**: Create personalized expense categories with limits based on percentages or fixed amounts from income sources.
+- **Income Tracking**: Manage multiple income sources with automatic rollovers of unspent funds.
+- **Family Management**: Share budgets across family members with role-based access.
+- **AI Assistant (G.A.I.A.)**: Get smart budget advice, forecasts, and optimizations powered by AI.
+- **Telegram Bot Integration**: Add expenses/incomes via text, voice, or receipt photos directly in Telegram.
+- **PWA Support**: Install as a progressive web app for offline access and mobile-friendly experience.
+- **Multi-Currency Support**: Handle transactions in various currencies with automatic conversions.
+- **Reports & Analytics**: Visualize your finances with charts and summaries.
 
-**Use Lovable**
+Read more in [FEATURES.md](FEATURES.md) and [PITCH.md](PITCH.md).
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/216b85ca-b369-4495-a8ba-03c616447a03) and start prompting.
+## Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
+- **Frontend**: React, TypeScript, Vite, Shadcn/UI, Tailwind CSS
+- **Backend**: Supabase (PostgreSQL, Auth, Edge Functions)
+- **Integrations**: OpenAI (GPT-4o-mini for AI chat, vision, and transcription), Telegram Bot API
+- **Other**: Recharts for charts, React Query for data fetching
 
-**Use your preferred IDE**
+## Getting Started
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Prerequisites
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- Node.js (v18+)
+- npm or Bun
+- Supabase account (for backend)
 
-Follow these steps:
+### Installation
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/crystalbudget.git
+   cd crystalbudget
+   ```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+2. Install dependencies:
+   ```bash
+   npm install
+   # or bun install
+   ```
 
-# Step 3: Install the necessary dependencies.
-npm i
+3. Set up environment variables:
+   Create a `.env` file in the root:
+   ```
+   VITE_SUPABASE_URL=your-supabase-url
+   VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+   VITE_OPENAI_API_KEY=your-openai-api-key
+   VITE_TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+   ```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
+   Open [http://localhost:8080](http://localhost:8080) in your browser.
+
+### Building for Production
+
+```bash
+npm run build
 ```
 
-**Edit a file directly in GitHub**
+This will automatically bump the version and update the service worker cache.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Supabase Setup
 
-**Use GitHub Codespaces**
+- Create a Supabase project.
+- Run the migrations in `supabase/migrations/` using Supabase CLI.
+- Deploy Edge Functions from `supabase/functions/`.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+For detailed setup, refer to Supabase documentation.
 
-## What technologies are used for this project?
+## Usage
 
-This project is built with:
+- **Sign Up/Login**: Use email or Telegram authentication.
+- **Dashboard**: View summaries, add transactions, manage categories.
+- **Telegram Bot**: Interact via `/start` for quick actions.
+- **AI Chat**: Ask G.A.I.A. for budget advice.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Contributing
 
-## How can I deploy this project?
+We welcome contributions! Please fork the repo and submit a pull request.
 
-Simply open [Lovable](https://lovable.dev/projects/216b85ca-b369-4495-a8ba-03c616447a03) and click on Share -> Publish.
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## Can I connect a custom domain to my Lovable project?
+## License
 
-Yes, you can!
+Distributed under the MIT License. See `LICENSE` for more information.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Contact
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Project Link: [https://github.com/yourusername/crystalbudget](https://github.com/yourusername/crystalbudget)
+
+---
+
+*Built with ❤️ for better financial clarity*
