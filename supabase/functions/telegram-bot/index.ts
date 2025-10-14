@@ -368,8 +368,9 @@ async function getEffectiveUserId(userId) {
   const context = await getUserContext(userId);
   return context.effectiveUserId;
 }
-async function formatAmount(amountInRubles, currency) {
-  const rates = await getExchangeRates();
+function formatAmount(amountInRubles, currency) {
+  // Use cached rates or fallback to static rates
+  const rates = cachedExchangeRates || exchangeRates;
   const rate = rates[currency] || exchangeRates[currency] || 1;
   const convertedAmount = amountInRubles * rate;
   const symbol = currencySymbols[currency] || '₽';
@@ -868,7 +869,7 @@ async function handleCallbackQuery(query) {
     const { data: insertedExpense, error } = await supabase.from('expenses').insert({
       user_id: userId,
       category_id: categoryId,
-      amount: convertToRubles(receiptData.amount, currency),
+      amount: receiptData.amount,
       description: receiptData.description || receiptData.store,
       date: expenseDate
     }).select().single();
@@ -901,7 +902,7 @@ async function handleCallbackQuery(query) {
     const { error } = await supabase.from('expenses').insert({
       user_id: userId,
       category_id: categoryId,
-      amount: convertToRubles(session.amount, currency),
+      amount: session.amount,
       description: session.description,
       date: new Date().toISOString()
     });
@@ -932,7 +933,7 @@ async function handleCallbackQuery(query) {
     const { error } = await supabase.from('incomes').insert({
       user_id: userId,
       source_id: sourceId,
-      amount: convertToRubles(session.amount, currency),
+      amount: session.amount,
       description: session.description,
       date: new Date().toISOString()
     });
@@ -1060,7 +1061,7 @@ async function handleTextMessage(message, userId) {
     if (session.type === 'expense') {
       const { error } = await supabase.from('expenses').insert({
         user_id: userId,
-        amount: convertToRubles(amount, currency),
+        amount: amount,
         category_id: session.categoryId,
         description: description,
         date: new Date().toISOString()
@@ -1068,12 +1069,13 @@ async function handleTextMessage(message, userId) {
       if (error) {
         await sendTelegramMessage(chatId, '❌ Ошибка добавления расхода.');
       } else {
-        await sendTelegramMessage(chatId, `✅ <b>Расход добавлен!</b>\n\n` + `💸 Сумма: <b>${formatAmount(amount, currency)}</b>\n` + (description ? `📝 ${description}` : ''), getMainKeyboard());
+        const symbol = currencySymbols[currency] || '₽';
+        await sendTelegramMessage(chatId, `✅ <b>Расход добавлен!</b>\n\n` + `💸 Сумма: <b>${amount.toLocaleString('ru-RU')} ${symbol}</b>\n` + (description ? `📝 ${description}` : ''), getMainKeyboard());
       }
     } else if (session.type === 'income') {
-      const { error } = await supabase.from('incomes').insert({
+      const { error} = await supabase.from('incomes').insert({
         user_id: userId,
-        amount: convertToRubles(amount, currency),
+        amount: amount,
         source_id: session.sourceId,
         description: description,
         date: new Date().toISOString()
@@ -1081,7 +1083,8 @@ async function handleTextMessage(message, userId) {
       if (error) {
         await sendTelegramMessage(chatId, '❌ Ошибка добавления дохода.');
       } else {
-        await sendTelegramMessage(chatId, `✅ <b>Доход добавлен!</b>\n\n` + `💰 Сумма: <b>${formatAmount(amount, currency)}</b>\n` + (description ? `📝 ${description}` : ''), getMainKeyboard());
+        const symbol = currencySymbols[currency] || '₽';
+        await sendTelegramMessage(chatId, `✅ <b>Доход добавлен!</b>\n\n` + `💰 Сумма: <b>${amount.toLocaleString('ru-RU')} ${symbol}</b>\n` + (description ? `📝 ${description}` : ''), getMainKeyboard());
       }
     }
     await deleteSession(telegramId);
@@ -1183,7 +1186,7 @@ async function handleVoiceMessage(message, userId) {
       // Store in session for confirmation
       await setSession(telegramId, {
         type: 'voice_expense_confirmation',
-        amount: convertToRubles(voiceData.amount, currency),
+        amount: voiceData.amount,
         description: voiceData.description,
         transcribedText: voiceData.transcribedText,
         suggestedCategory: voiceData.category
@@ -1222,7 +1225,7 @@ async function handleVoiceMessage(message, userId) {
       // Store in session for confirmation
       await setSession(telegramId, {
         type: 'voice_income_confirmation',
-        amount: convertToRubles(voiceData.amount, currency),
+        amount: voiceData.amount,
         description: voiceData.description,
         transcribedText: voiceData.transcribedText,
         suggestedSource: voiceData.category
