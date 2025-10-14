@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { TrendingUp, TrendingDown, PiggyBank, Plus, Wallet, FolderOpen, BarChart3, Bot, ArrowUpDown } from "lucide-react";
+import { TrendingUp, TrendingDown, PiggyBank, Plus, Wallet, FolderOpen, BarChart3, Bot, ArrowUpDown, LayoutGrid, List, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,6 +14,8 @@ import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { AIChatDialog } from "@/components/AIChatDialog";
 import { QuickGuide } from "@/components/QuickGuide";
 import { TelegramGuide } from "@/components/TelegramGuide";
+import { DashboardSkeleton } from "@/components/DashboardSkeleton";
+import { EmptyState } from "@/components/EmptyState";
 // import { PullToRefresh } from "@/components/PullToRefresh";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
 import { IncomeSource, Category, SourceSummary, CategoryBudget } from "@/types/budget";
 import { useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 const Dashboard = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const navigate = useNavigate();
@@ -45,11 +48,21 @@ const Dashboard = () => {
   const [telegramGuideOpen, setTelegramGuideOpen] = useState(false);
   const [carryOverBalance, setCarryOverBalance] = useState(0);
   const [categorySortBy, setCategorySortBy] = useState<"name" | "spent" | "remaining">("name");
+  const [compactView, setCompactView] = useState(() => {
+    const saved = localStorage.getItem('dashboard_compact_view');
+    return saved ? JSON.parse(saved) : false;
+  });
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "attention" | "exceeded">("all");
   useEffect(() => {
     if (user) {
       loadData();
     }
   }, [user, selectedDate]);
+
+  // Save compact view preference
+  useEffect(() => {
+    localStorage.setItem('dashboard_compact_view', JSON.stringify(compactView));
+  }, [compactView]);
 
   // Show quick guide for new users
   useEffect(() => {
@@ -165,66 +178,114 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
-  const handleAddIncome = async (income: {
+  // OPTIMIZATION: Memoized callbacks
+  const handleAddIncome = useCallback(async (income: {
     sourceId: string;
     amount: number;
     date: string;
     description?: string;
   }) => {
     if (!user) return;
-    const {
-      error
-    } = await supabase.from('incomes').insert({
+    
+    // Optimistic update
+    const tempIncome = {
+      id: `temp-${Date.now()}`,
       user_id: user.id,
       source_id: income.sourceId,
       amount: income.amount,
       date: income.date,
-      description: income.description
-    });
-    if (error) {
+      description: income.description,
+      created_at: new Date().toISOString()
+    };
+    
+    setIncomes(prev => [...prev, tempIncome]);
+    
+    try {
+      const { data, error } = await supabase
+        .from('incomes')
+        .insert({
+          user_id: user.id,
+          source_id: income.sourceId,
+          amount: income.amount,
+          date: income.date,
+          description: income.description
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      // Replace temp with real data
+      setIncomes(prev => prev.map(i => i.id === tempIncome.id ? data : i));
+      
+      toast({
+        title: "Доход добавлен",
+        description: "Транзакция успешно записана"
+      });
+    } catch (error: any) {
+      // Rollback on error
+      setIncomes(prev => prev.filter(i => i.id !== tempIncome.id));
       toast({
         title: "Ошибка",
         description: error.message,
         variant: "destructive"
       });
-    } else {
-      toast({
-        title: "Доход добавлен",
-        description: "Транзакция успешно записана"
-      });
-      loadData();
     }
-  };
-  const handleAddExpense = async (expense: {
+  }, [user, toast]);
+
+  const handleAddExpense = useCallback(async (expense: {
     categoryId: string;
     amount: number;
     date: string;
     description?: string;
   }) => {
     if (!user) return;
-    const {
-      error
-    } = await supabase.from('expenses').insert({
+    
+    // Optimistic update
+    const tempExpense = {
+      id: `temp-${Date.now()}`,
       user_id: user.id,
       category_id: expense.categoryId,
       amount: expense.amount,
       date: expense.date,
-      description: expense.description
-    });
-    if (error) {
+      description: expense.description,
+      created_at: new Date().toISOString()
+    };
+    
+    setExpenses(prev => [...prev, tempExpense]);
+    
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert({
+          user_id: user.id,
+          category_id: expense.categoryId,
+          amount: expense.amount,
+          date: expense.date,
+          description: expense.description
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      // Replace temp with real data
+      setExpenses(prev => prev.map(e => e.id === tempExpense.id ? data : e));
+      
+      toast({
+        title: "Расход добавлен",
+        description: "Транзакция успешно записана"
+      });
+    } catch (error: any) {
+      // Rollback on error
+      setExpenses(prev => prev.filter(e => e.id !== tempExpense.id));
       toast({
         title: "Ошибка",
         description: error.message,
         variant: "destructive"
       });
-    } else {
-      toast({
-        title: "Расход добавлен",
-        description: "Транзакция успешно записана"
-      });
-      loadData();
     }
-  };
+  }, [user, toast]);
 
   // Calculate source summaries
   const calculateSourceSummaries = (): SourceSummary[] => {
@@ -339,20 +400,47 @@ const Dashboard = () => {
     });
   };
 
-  // Overall summary - balance only for current month
-  const currentMonthIncome = incomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
-  const totalExpenses = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
-  const monthBalance = currentMonthIncome - totalExpenses;
-  const totalBalance = currentMonthIncome + carryOverBalance - totalExpenses;
-  const sourceSummaries = calculateSourceSummaries();
-  const categoryBudgets = calculateCategoryBudgets();
-  const monthName = format(selectedDate, "LLLL", { locale: ru });
+  // OPTIMIZATION: Memoized calculations
+  const currentMonthIncome = useMemo(
+    () => incomes.reduce((sum, inc) => sum + Number(inc.amount), 0),
+    [incomes]
+  );
+  
+  const totalExpenses = useMemo(
+    () => expenses.reduce((sum, exp) => sum + Number(exp.amount), 0),
+    [expenses]
+  );
+  
+  const monthBalance = useMemo(
+    () => currentMonthIncome - totalExpenses,
+    [currentMonthIncome, totalExpenses]
+  );
+  
+  const totalBalance = useMemo(
+    () => currentMonthIncome + carryOverBalance - totalExpenses,
+    [currentMonthIncome, carryOverBalance, totalExpenses]
+  );
+  
+  const sourceSummaries = useMemo(
+    () => calculateSourceSummaries(),
+    [incomeSources, incomes, expenses, categories]
+  );
+  
+  const categoryBudgets = useMemo(
+    () => calculateCategoryBudgets(),
+    [categories, incomes, expenses, incomeSources]
+  );
+  
+  const monthName = useMemo(
+    () => format(selectedDate, "LLLL", { locale: ru }),
+    [selectedDate]
+  );
   if (loading) {
-    return <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">Загрузка данных...</p>
-        </div>
-      </Layout>;
+    return (
+      <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
+        <DashboardSkeleton />
+      </Layout>
+    );
   }
   return <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
       {/* <PullToRefresh onRefresh={loadData}> */}
@@ -430,26 +518,91 @@ const Dashboard = () => {
                   <span>Источники дохода</span>
                 </h2>
               </div>
-              {incomeSources.length > 0 ? <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-2.5">
+              {incomeSources.length > 0 ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-2.5">
                   {incomeSources.map(source => {
-                const summary = sourceSummaries.find(s => s.sourceId === source.id);
-                return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
-              })}
-                </div> : <p className="text-xs sm:text-sm text-muted-foreground">Нет источников дохода</p>}
+                    const summary = sourceSummaries.find(s => s.sourceId === source.id);
+                    return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
+                  })}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={Wallet}
+                  title="Нет источников дохода"
+                  description="Добавьте источник дохода, чтобы начать отслеживать финансы"
+                  action={{
+                    label: "Добавить источник",
+                    onClick: () => navigate('/incomes'),
+                    icon: Plus
+                  }}
+                />
+              )}
             </section>
 
             <section className="space-y-2 sm:space-y-3">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                 <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
                   <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                   <span>Категории расходов</span>
-                </h2>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs sm:text-sm text-muted-foreground">
-                    {categories.length}
+                  <span className="text-xs sm:text-sm text-muted-foreground font-normal">
+                    ({categories.length})
                   </span>
+                </h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Фильтр */}
+                  <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                    <Button
+                      variant={categoryFilter === "all" ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 text-xs px-2"
+                      onClick={() => setCategoryFilter("all")}
+                    >
+                      Все
+                    </Button>
+                    <Button
+                      variant={categoryFilter === "attention" ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 text-xs px-2"
+                      onClick={() => setCategoryFilter("attention")}
+                    >
+                      Внимание
+                    </Button>
+                    <Button
+                      variant={categoryFilter === "exceeded" ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 text-xs px-2"
+                      onClick={() => setCategoryFilter("exceeded")}
+                    >
+                      Превышены
+                    </Button>
+                  </div>
+                  
+                  {/* Переключатель вида */}
+                  <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                    <Button
+                      variant={compactView ? "ghost" : "default"}
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => setCompactView(false)}
+                      title="Детальный вид"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={compactView ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => setCompactView(true)}
+                      title="Компактный вид"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  
+                  {/* Сортировка */}
                   <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
                     <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs">
+                      <ArrowUpDown className="h-3 w-3 mr-1" />
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -460,27 +613,70 @@ const Dashboard = () => {
                   </Select>
                 </div>
               </div>
-              {categories.length > 0 ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
-                  {[...categories].sort((a, b) => {
-                    const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
-                    const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
-                    if (!budgetA || !budgetB) return 0;
-                    
-                    switch (categorySortBy) {
-                      case "name":
-                        return a.name.localeCompare(b.name);
-                      case "spent":
-                        return budgetB.spent - budgetA.spent;
-                      case "remaining":
-                        return budgetB.remaining - budgetA.remaining;
-                      default:
-                        return 0;
-                    }
-                  }).map(category => {
-                const budget = categoryBudgets.find(b => b.categoryId === category.id);
-                return budget ? <CategoryCard key={category.id} category={category} budget={budget} incomeSources={incomeSources} /> : null;
-              })}
-                </div> : <p className="text-sm text-muted-foreground">Нет категорий расходов</p>}
+              {categories.length > 0 ? (
+                <div className={cn(
+                  "grid gap-2 sm:gap-3",
+                  compactView ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                )}>
+                  {[...categories]
+                    .filter(category => {
+                      const budget = categoryBudgets.find(b => b.categoryId === category.id);
+                      if (!budget) return false;
+                      
+                      const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
+                      const isOverBudget = budget.spent > budget.allocated;
+                      
+                      switch (categoryFilter) {
+                        case "attention":
+                          return usedPercentage > 70 && !isOverBudget;
+                        case "exceeded":
+                          return isOverBudget;
+                        default:
+                          return true;
+                      }
+                    })
+                    .sort((a, b) => {
+                      const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
+                      const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
+                      if (!budgetA || !budgetB) return 0;
+                      
+                      switch (categorySortBy) {
+                        case "name":
+                          return a.name.localeCompare(b.name);
+                        case "spent":
+                          return budgetB.spent - budgetA.spent;
+                        case "remaining":
+                          return budgetB.remaining - budgetA.remaining;
+                        default:
+                          return 0;
+                      }
+                    })
+                    .map(category => {
+                      const budget = categoryBudgets.find(b => b.categoryId === category.id);
+                      return budget ? (
+                        <CategoryCard 
+                          key={category.id} 
+                          category={category} 
+                          budget={budget} 
+                          incomeSources={incomeSources} 
+                          showSources={false}
+                          compact={compactView}
+                        />
+                      ) : null;
+                    })}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={FolderOpen}
+                  title="Нет категорий расходов"
+                  description="Создайте категории, чтобы организовать свои расходы"
+                  action={{
+                    label: "Создать категорию",
+                    onClick: () => navigate('/categories'),
+                    icon: Plus
+                  }}
+                />
+              )}
             </section>
           </TabsContent>
 
@@ -531,7 +727,7 @@ const Dashboard = () => {
                   }
                 }).map(category => {
               const budget = categoryBudgets.find(b => b.categoryId === category.id);
-              return budget ? <CategoryCard key={category.id} category={category} budget={budget} incomeSources={incomeSources} /> : null;
+              return budget ? <CategoryCard key={category.id} category={category} budget={budget} incomeSources={incomeSources} showSources={false} /> : null;
             })}
               </div> : <p className="text-sm text-muted-foreground">Нет категорий расходов</p>}
           </TabsContent>
