@@ -7,7 +7,96 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
-// Примерные курсы валют к рублю (можно заменить на API)
+
+// ============================================================================
+// OPTIMIZATION: Caching System
+// ============================================================================
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const RATES_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+interface CachedData<T> {
+  data: T;
+  timestamp: number;
+}
+
+interface UserContextCache {
+  effectiveUserId: string;
+  currency: string;
+  categories: any[];
+  sources: any[];
+}
+
+const userContextCache = new Map<string, CachedData<UserContextCache>>();
+const sessionCache = new Map<string, CachedData<any>>();
+
+// ============================================================================
+// OPTIMIZATION: Rate Limiting
+// ============================================================================
+const rateLimits = new Map<string, number[]>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 20; // 20 requests per minute
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const userLimits = rateLimits.get(userId) || [];
+  
+  // Remove old requests
+  const recentRequests = userLimits.filter(time => now - time < RATE_LIMIT_WINDOW);
+  
+  if (recentRequests.length >= RATE_LIMIT_MAX) {
+    return false;
+  }
+  
+  recentRequests.push(now);
+  rateLimits.set(userId, recentRequests);
+  return true;
+}
+
+// ============================================================================
+// OPTIMIZATION: Metrics System
+// ============================================================================
+const metrics = {
+  requests: 0,
+  errors: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  rateLimitHits: 0,
+  avgResponseTime: [] as number[],
+  lastReset: Date.now()
+};
+
+function trackMetric(type: 'request' | 'error' | 'cacheHit' | 'cacheMiss' | 'rateLimitHit', duration?: number) {
+  metrics[type === 'request' ? 'requests' : type === 'error' ? 'errors' : type === 'cacheHit' ? 'cacheHits' : type === 'cacheMiss' ? 'cacheMisses' : 'rateLimitHits']++;
+  
+  if (duration !== undefined) {
+    metrics.avgResponseTime.push(duration);
+  }
+  
+  // Log metrics every 100 requests
+  if (metrics.requests % 100 === 0) {
+    const avgTime = metrics.avgResponseTime.length > 0 
+      ? metrics.avgResponseTime.reduce((a, b) => a + b, 0) / metrics.avgResponseTime.length 
+      : 0;
+    console.log('📊 Metrics:', {
+      requests: metrics.requests,
+      errors: metrics.errors,
+      cacheHitRate: ((metrics.cacheHits / (metrics.cacheHits + metrics.cacheMisses)) * 100).toFixed(2) + '%',
+      rateLimitHits: metrics.rateLimitHits,
+      avgResponseTime: avgTime.toFixed(2) + 'ms',
+      uptime: ((Date.now() - metrics.lastReset) / 1000 / 60).toFixed(2) + 'min'
+    });
+    // Reset avgResponseTime to prevent memory leak
+    metrics.avgResponseTime = [];
+  }
+}
+
+// ============================================================================
+// OPTIMIZATION: Exchange Rates with API
+// ============================================================================
+let cachedExchangeRates: any = null;
+let ratesTimestamp = 0;
+
+// Fallback rates
 const exchangeRates = {
   RUB: 1,
   USD: 0.01,
@@ -19,6 +108,35 @@ const exchangeRates = {
   GEL: 0.033,
   AMD: 0.025
 };
+
+async function getExchangeRates() {
+  const now = Date.now();
+  
+  // Return cached rates if still valid
+  if (cachedExchangeRates && (now - ratesTimestamp) < RATES_CACHE_TTL) {
+    return cachedExchangeRates;
+  }
+  
+  try {
+    // Try to fetch from API
+    const response = await fetch('https://api.exchangerate-api.com/v4/latest/RUB', {
+      signal: AbortSignal.timeout(3000) // 3 second timeout
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      cachedExchangeRates = data.rates;
+      ratesTimestamp = now;
+      console.log('✅ Exchange rates updated from API');
+      return cachedExchangeRates;
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to fetch exchange rates, using fallback:', error.message);
+  }
+  
+  // Fallback to hardcoded rates
+  return exchangeRates;
+}
 // Currency symbols mapping
 const currencySymbols = {
   RUB: '₽',
@@ -31,26 +149,61 @@ const currencySymbols = {
   GEL: '₾',
   AMD: '֏'
 };
-// User session storage for multi-step operations (now in database)
+// ============================================================================
+// OPTIMIZATION: Cached Session Management
+// ============================================================================
 async function getSession(telegramId) {
-  const { data, error } = await supabase.from('telegram_bot_sessions').select('session_data').eq('telegram_id', telegramId).gt('expires_at', new Date().toISOString()).maybeSingle();
+  const cacheKey = `session_${telegramId}`;
+  const cached = sessionCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    trackMetric('cacheHit');
+    return cached.data;
+  }
+  
+  trackMetric('cacheMiss');
+  const { data, error } = await supabase
+    .from('telegram_bot_sessions')
+    .select('session_data')
+    .eq('telegram_id', telegramId)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
+  
   if (error) {
     console.error('Error getting session:', error);
     return null;
   }
-  return data?.session_data || null;
+  
+  const sessionData = data?.session_data || null;
+  if (sessionData) {
+    sessionCache.set(cacheKey, { data: sessionData, timestamp: Date.now() });
+  }
+  
+  return sessionData;
 }
+
 async function setSession(telegramId, sessionData) {
+  const cacheKey = `session_${telegramId}`;
+  
+  // Update cache immediately
+  sessionCache.set(cacheKey, { data: sessionData, timestamp: Date.now() });
+  
+  // Update database
   const { error } = await supabase.from('telegram_bot_sessions').upsert({
     telegram_id: telegramId,
     session_data: sessionData,
     expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString()
   });
+  
   if (error) {
     console.error('Error setting session:', error);
+    sessionCache.delete(cacheKey); // Invalidate cache on error
   }
 }
+
 async function deleteSession(telegramId) {
+  const cacheKey = `session_${telegramId}`;
+  sessionCache.delete(cacheKey);
   await supabase.from('telegram_bot_sessions').delete().eq('telegram_id', telegramId);
 }
 async function sendTelegramMessage(chatId, text, keyboard) {
@@ -109,48 +262,123 @@ async function answerCallbackQuery(callbackQueryId, text) {
     throw error;
   }
 }
+// ============================================================================
+// OPTIMIZATION: Cached User Context (combines multiple DB queries)
+// ============================================================================
+async function getUserContext(userId: string) {
+  const cacheKey = `user_context_${userId}`;
+  const cached = userContextCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    trackMetric('cacheHit');
+    return cached.data;
+  }
+  
+  trackMetric('cacheMiss');
+  
+  // Parallel queries for better performance
+  const [
+    effectiveUserIdResult,
+    currencyResult,
+    categoriesResult,
+    sourcesResult
+  ] = await Promise.all([
+    getEffectiveUserIdUncached(userId),
+    getUserCurrencyUncached(userId),
+    supabase.from('categories').select('id, name, icon').eq('user_id', userId).order('name'),
+    supabase.from('income_sources').select('id, name').eq('user_id', userId).order('name')
+  ]);
+  
+  const context: UserContextCache = {
+    effectiveUserId: effectiveUserIdResult,
+    currency: currencyResult,
+    categories: categoriesResult.data || [],
+    sources: sourcesResult.data || []
+  };
+  
+  userContextCache.set(cacheKey, { data: context, timestamp: Date.now() });
+  return context;
+}
+
+function invalidateUserCache(userId: string) {
+  const cacheKey = `user_context_${userId}`;
+  userContextCache.delete(cacheKey);
+}
+
 async function getUserByTelegramId(telegramId) {
-  const { data, error } = await supabase.from('telegram_users').select('user_id').eq('telegram_id', telegramId).maybeSingle();
+  const { data, error } = await supabase
+    .from('telegram_users')
+    .select('user_id')
+    .eq('telegram_id', telegramId)
+    .maybeSingle();
+  
   if (error) {
     console.error('Error fetching user:', error);
     return null;
   }
   return data?.user_id || null;
 }
-async function getUserCurrency(userId) {
-  const { data, error } = await supabase.from('user_preferences').select('currency').eq('user_id', userId).maybeSingle();
+
+async function getUserCurrencyUncached(userId) {
+  const { data, error } = await supabase
+    .from('user_preferences')
+    .select('currency')
+    .eq('user_id', userId)
+    .maybeSingle();
+  
   if (error) {
     console.error('Error fetching user currency:', error);
-    return 'RUB'; // Default currency
+    return 'RUB';
   }
   return data?.currency || 'RUB';
 }
-// Get family owner ID if user is in a family, otherwise return user_id
-async function getEffectiveUserId(userId) {
+
+async function getUserCurrency(userId) {
+  const context = await getUserContext(userId);
+  return context.currency;
+}
+
+async function getEffectiveUserIdUncached(userId) {
   // Check if user is a family owner
-  const { data: ownedFamily } = await supabase.from('families').select('id, owner_id').eq('owner_id', userId).maybeSingle();
+  const { data: ownedFamily } = await supabase
+    .from('families')
+    .select('id, owner_id')
+    .eq('owner_id', userId)
+    .maybeSingle();
+  
   if (ownedFamily) {
-    // User is family owner, use their ID
     return userId;
   }
+  
   // Check if user is a family member
-  const { data: membership } = await supabase.from('family_members').select('family_id, families!inner(owner_id)').eq('user_id', userId).maybeSingle();
+  const { data: membership } = await supabase
+    .from('family_members')
+    .select('family_id, families!inner(owner_id)')
+    .eq('user_id', userId)
+    .maybeSingle();
+  
   if (membership && membership.families) {
-    // User is a family member, use family owner's ID
     return membership.families.owner_id;
   }
-  // User is not in a family, use their own ID
+  
   return userId;
 }
-function formatAmount(amountInRubles, currency) {
-  const rate = exchangeRates[currency] || 1;
+
+async function getEffectiveUserId(userId) {
+  const context = await getUserContext(userId);
+  return context.effectiveUserId;
+}
+async function formatAmount(amountInRubles, currency) {
+  const rates = await getExchangeRates();
+  const rate = rates[currency] || exchangeRates[currency] || 1;
   const convertedAmount = amountInRubles * rate;
   const symbol = currencySymbols[currency] || '₽';
   return `${convertedAmount.toLocaleString('ru-RU')} ${symbol}`;
 }
-// Конвертирует сумму из выбранной валюты в рубли
-function convertToRubles(amount, currency) {
-  const rate = exchangeRates[currency] || 1;
+
+async function convertToRubles(amount, currency) {
+  const rates = await getExchangeRates();
+  const rate = rates[currency] || exchangeRates[currency] || 1;
   return amount / rate;
 }
 async function hasActiveSubscription(userId) {
@@ -905,10 +1133,11 @@ async function handleVoiceMessage(message, userId) {
   const chatId = message.chat.id;
   const telegramId = message.from.id;
   console.log('Voice message received, processing...');
-  // Get effective user ID (family owner if in family)
-  const effectiveUserId = await getEffectiveUserId(userId);
-  // Get user currency
-  const currency = await getUserCurrency(effectiveUserId);
+  
+  // OPTIMIZATION: Use cached user context (single call instead of 4 DB queries)
+  const context = await getUserContext(userId);
+  const { effectiveUserId, currency, categories, sources } = context;
+  
   await sendTelegramMessage(chatId, '🎤 Распознаю голос...');
   try {
     // Get voice file
@@ -921,13 +1150,6 @@ async function handleVoiceMessage(message, userId) {
     }
     const filePath = fileData.result.file_path;
     const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
-    // Get user's categories and income sources
-    const [categoriesRes, sourcesRes] = await Promise.all([
-      supabase.from('categories').select('id, name, icon').eq('user_id', effectiveUserId).order('name'),
-      supabase.from('income_sources').select('id, name').eq('user_id', effectiveUserId).order('name')
-    ]);
-    const categories = categoriesRes.data || [];
-    const sources = sourcesRes.data || [];
     if (categories.length === 0 && sources.length === 0) {
       await sendTelegramMessage(chatId, '❌ У вас нет категорий и источников.\n\nСоздайте их в приложении CrystalBudget сначала.', getMainKeyboard());
       return;
@@ -1043,12 +1265,18 @@ async function handlePhotoMessage(message, userId) {
   const chatId = message.chat.id;
   const telegramId = message.from.id;
   console.log('Photo received, processing receipt...');
-  // Get effective user ID (family owner if in family)
-  const effectiveUserId = await getEffectiveUserId(userId);
-  // Get user currency
-  const currency = await getUserCurrency(effectiveUserId);
+  
+  // OPTIMIZATION: Use cached user context (single call instead of 3 DB queries)
+  const context = await getUserContext(userId);
+  const { effectiveUserId, currency, categories } = context;
+  
   await sendTelegramMessage(chatId, '📸 Сканирую чек...');
   try {
+    if (categories.length === 0) {
+      await sendTelegramMessage(chatId, '❌ У вас нет категорий расходов.\n\nСоздайте их в приложении CrystalBudget сначала.', getMainKeyboard());
+      return;
+    }
+    
     // Get the largest photo
     const photo = message.photo[message.photo.length - 1];
     // Get file path from Telegram
@@ -1059,12 +1287,7 @@ async function handlePhotoMessage(message, userId) {
     }
     const filePath = fileData.result.file_path;
     const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
-    // Get user's categories
-    const { data: categories } = await supabase.from('categories').select('name, icon').eq('user_id', effectiveUserId);
-    if (!categories || categories.length === 0) {
-      await sendTelegramMessage(chatId, '❌ У вас нет категорий расходов.\n\nСоздайте их в приложении CrystalBudget сначала.', getMainKeyboard());
-      return;
-    }
+    
     // Call scan-receipt function
     const scanResponse = await fetch(`${SUPABASE_URL}/functions/v1/scan-receipt`, {
       method: 'POST',
@@ -1075,7 +1298,7 @@ async function handlePhotoMessage(message, userId) {
       body: JSON.stringify({
         userId: userId,
         imageUrl: fileUrl,
-        categories: categories
+        categories: categories.map(c => ({ name: c.name, icon: c.icon }))
       })
     });
     if (!scanResponse.ok) {
@@ -1086,25 +1309,20 @@ async function handlePhotoMessage(message, userId) {
       throw new Error(receiptData.error);
     }
     console.log('Receipt data:', receiptData);
+    
     // Store receipt data in session for confirmation
     await setSession(telegramId, {
       type: 'receipt_confirmation',
       receiptData: receiptData
     });
-    // Get all categories with IDs
-    const { data: allCategories } = await supabase.from('categories').select('id, name, icon').eq('user_id', effectiveUserId).order('name');
-    if (!allCategories || allCategories.length === 0) {
-      await sendTelegramMessage(chatId, '❌ У вас нет категорий расходов.', getMainKeyboard());
-      return;
-    }
-    // Find suggested category
-    const suggestedCategory = allCategories.find((c)=>c.name.toLowerCase() === receiptData.category.toLowerCase());
+    // Find suggested category (use cached categories)
+    const suggestedCategory = categories.find((c)=>c.name.toLowerCase() === receiptData.category.toLowerCase());
     // Create keyboard with all categories, suggested one first
-    let sortedCategories = allCategories;
+    let sortedCategories = categories;
     if (suggestedCategory) {
       sortedCategories = [
         suggestedCategory,
-        ...allCategories.filter((c)=>c.id !== suggestedCategory.id)
+        ...categories.filter((c)=>c.id !== suggestedCategory.id)
       ];
     }
     // Create keyboard with ALL categories (no limit) and cancel button
@@ -1212,6 +1430,34 @@ Deno.serve(async (req)=>{
       }
     });
   }
+  // OPTIMIZATION: Track request start time
+  const requestStart = Date.now();
+  trackMetric('request');
+  
+  // OPTIMIZATION: Rate Limiting
+  const userId = update.callback_query?.from?.id || update.message?.from?.id;
+  if (userId && !checkRateLimit(userId.toString())) {
+    trackMetric('rateLimitHit');
+    console.warn(`⚠️ Rate limit exceeded for user ${userId}`);
+    
+    const chatId = update.callback_query?.message?.chat?.id || update.message?.chat?.id;
+    if (chatId) {
+      await sendTelegramMessage(
+        chatId, 
+        '⏱️ Слишком много запросов. Пожалуйста, подождите немного.'
+      );
+    }
+    
+    return new Response(JSON.stringify({
+      ok: true
+    }), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
+    });
+  }
+  
   // Обработка с таймаутом для защиты от зависаний
   const handler = (async ()=>{
     try {
@@ -1229,17 +1475,25 @@ Deno.serve(async (req)=>{
       }
     } catch (error) {
       console.error('Handler error:', error);
+      trackMetric('error');
     }
   })();
-  // Таймаут 8 секунд - защита от долгой обработки
+  
+  // OPTIMIZATION: Reduced timeout from 8s to 5s
   const timeout = new Promise((resolve)=>setTimeout(()=>{
-      console.log('⏱️ Handler timeout reached (8s)');
+      console.log('⏱️ Handler timeout reached (5s)');
       resolve('timeout');
-    }, 8000));
+    }, 5000));
+  
   const result = await Promise.race([
     handler,
     timeout
   ]);
+  
+  // OPTIMIZATION: Track response time
+  const duration = Date.now() - requestStart;
+  trackMetric('request', duration);
+  
   // Всегда быстрый ACK для Telegram
   return new Response(JSON.stringify({
     ok: true,
