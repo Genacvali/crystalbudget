@@ -695,41 +695,143 @@ const Dashboard = () => {
 
           {/* Categories Tab */}
           <TabsContent value="categories" className="space-y-3 sm:space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg sm:text-xl font-bold">Категории расходов</h2>
-              <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
-                <SelectTrigger className="w-[160px]">
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="name">По названию</SelectItem>
-                  <SelectItem value="spent">По потраченному</SelectItem>
-                  <SelectItem value="remaining">По остатку</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                <span>Категории расходов</span>
+                <span className="text-xs sm:text-sm text-muted-foreground font-normal">
+                  ({categories.length})
+                </span>
+              </h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Фильтр */}
+                <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                  <Button
+                    variant={categoryFilter === "all" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    onClick={() => setCategoryFilter("all")}
+                  >
+                    Все
+                  </Button>
+                  <Button
+                    variant={categoryFilter === "attention" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    onClick={() => setCategoryFilter("attention")}
+                  >
+                    Внимание
+                  </Button>
+                  <Button
+                    variant={categoryFilter === "exceeded" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    onClick={() => setCategoryFilter("exceeded")}
+                  >
+                    Превышены
+                  </Button>
+                </div>
+                
+                {/* Переключатель вида */}
+                <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                  <Button
+                    variant={compactView ? "ghost" : "default"}
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setCompactView(false)}
+                    title="Детальный вид"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={compactView ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setCompactView(true)}
+                    title="Компактный вид"
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                </div>
+                
+                {/* Сортировка */}
+                <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
+                  <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs">
+                    <ArrowUpDown className="h-3 w-3 mr-1" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name">Имя</SelectItem>
+                    <SelectItem value="spent">Траты</SelectItem>
+                    <SelectItem value="remaining">Остаток</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            {categories.length > 0 ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
-                {[...categories].sort((a, b) => {
-                  const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
-                  const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
-                  if (!budgetA || !budgetB) return 0;
-                  
-                  switch (categorySortBy) {
-                    case "name":
-                      return a.name.localeCompare(b.name);
-                    case "spent":
-                      return budgetB.spent - budgetA.spent;
-                    case "remaining":
-                      return budgetB.remaining - budgetA.remaining;
-                    default:
-                      return 0;
-                  }
-                }).map(category => {
-              const budget = categoryBudgets.find(b => b.categoryId === category.id);
-              return budget ? <CategoryCard key={category.id} category={category} budget={budget} incomeSources={incomeSources} showSources={false} /> : null;
-            })}
-              </div> : <p className="text-sm text-muted-foreground">Нет категорий расходов</p>}
+            {categories.length > 0 ? (
+              <div className={cn(
+                "grid gap-2 sm:gap-3",
+                compactView ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              )}>
+                {[...categories]
+                  .filter(category => {
+                    const budget = categoryBudgets.find(b => b.categoryId === category.id);
+                    if (!budget) return false;
+                    
+                    const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
+                    const isOverBudget = budget.spent > budget.allocated;
+                    
+                    switch (categoryFilter) {
+                      case "attention":
+                        return usedPercentage > 70 && !isOverBudget;
+                      case "exceeded":
+                        return isOverBudget;
+                      default:
+                        return true;
+                    }
+                  })
+                  .sort((a, b) => {
+                    const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
+                    const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
+                    if (!budgetA || !budgetB) return 0;
+                    
+                    switch (categorySortBy) {
+                      case "name":
+                        return a.name.localeCompare(b.name);
+                      case "spent":
+                        return budgetB.spent - budgetA.spent;
+                      case "remaining":
+                        return budgetB.remaining - budgetA.remaining;
+                      default:
+                        return 0;
+                    }
+                  })
+                  .map(category => {
+                    const budget = categoryBudgets.find(b => b.categoryId === category.id);
+                    return budget ? (
+                      <CategoryCard 
+                        key={category.id} 
+                        category={category} 
+                        budget={budget} 
+                        incomeSources={incomeSources} 
+                        showSources={true}
+                        compact={compactView}
+                      />
+                    ) : null;
+                  })}
+              </div>
+            ) : (
+              <EmptyState
+                icon={FolderOpen}
+                title="Нет категорий расходов"
+                description="Создайте категории для отслеживания расходов"
+                action={{
+                  label: "Добавить категорию",
+                  onClick: () => navigate('/categories'),
+                  icon: Plus
+                }}
+              />
+            )}
           </TabsContent>
         </Tabs>
       </div>
