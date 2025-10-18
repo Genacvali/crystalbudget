@@ -99,10 +99,19 @@ function NotificationItem({ notification, onMarkAsRead, onDelete }: Notification
             !isRead ? "text-foreground" : "text-muted-foreground"
           )}>
             {notification.message}
-            {notification.data?.actor_name && (
-              <span className="block text-xs text-muted-foreground mt-1">Добавил: {notification.data.actor_name}</span>
-            )}
           </p>
+          {notification.data?.actor_name && (
+            <div className="mt-1">
+              <span
+                className={cn(
+                  "inline-flex items-center rounded px-1.5 py-0.5 text-xs",
+                  !isRead ? "bg-accent/40 text-foreground" : "bg-muted text-muted-foreground"
+                )}
+              >
+                Добавил: {notification.data.actor_name}
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-2 mt-2">
             <span className={cn("text-xs", getTypeColor())}>
               {notification.type === 'income' && 'Доход'}
