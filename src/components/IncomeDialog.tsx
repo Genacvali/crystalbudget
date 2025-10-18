@@ -237,7 +237,7 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
             />
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="gap-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Отмена
           </Button>
