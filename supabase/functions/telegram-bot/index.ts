@@ -1414,46 +1414,7 @@ async function handleTextMessage(message, userId) {
   // Handle button presses
   switch(text){
     case '🔙 Назад':
-      // Show main menu with balance info
-      const effectiveUserId = await getEffectiveUserId(userId);
-      const now = new Date();
-    // Use UTC month boundaries to avoid timezone issues
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-      
-      const { data: expenses } = await supabase
-        .from('expenses')
-        .select('amount')
-        .eq('user_id', userId)
-        .gte('date', startOfMonth.toISOString())
-        .lte('date', endOfMonth.toISOString());
-      
-      const { data: incomes } = await supabase
-        .from('incomes')
-        .select('amount')
-        .eq('user_id', userId)
-        .gte('date', startOfMonth.toISOString())
-        .lte('date', endOfMonth.toISOString());
-      
-      const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-      const totalIncomes = incomes?.reduce((sum, i) => sum + Number(i.amount), 0) || 0;
-      const balance = totalIncomes - totalExpenses;
-      
-      const balanceEmoji = balance > 0 ? '💚' : balance < 0 ? '❤️' : '💛';
-      const balanceSign = balance > 0 ? '+' : '';
-      const symbol = currencySymbols[currency] || '₽';
-      
-      const monthLabel = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(now);
-      const formattedMonth = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
-      await sendTelegramMessage(
-        chatId, 
-        `🏠 <b>Главное меню</b>\n\n` +
-        `📊 <b>Баланс за ${formattedMonth}</b>\n` +
-        `${balanceEmoji} <b>${balanceSign}${balance.toLocaleString('ru-RU')} ${symbol}</b>\n\n` +
-        `💰 Доходы: +${totalIncomes.toLocaleString('ru-RU')} ${symbol}\n` +
-        `💸 Расходы: -${totalExpenses.toLocaleString('ru-RU')} ${symbol}`,
-        getMainKeyboard()
-      );
+      await sendTelegramMessage(chatId, '🏠 Главное меню', getMainKeyboard());
       break;
     case '💰 Финансы':
       await sendTelegramMessage(chatId, '💰 <b>Финансы</b>\n\nВыберите действие:', getFinanceKeyboard());
