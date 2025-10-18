@@ -99,6 +99,9 @@ function NotificationItem({ notification, onMarkAsRead, onDelete }: Notification
             !isRead ? "text-foreground" : "text-muted-foreground"
           )}>
             {notification.message}
+            {notification.data?.actor_name && (
+              <span className="block text-xs text-muted-foreground mt-1">Добавил: {notification.data.actor_name}</span>
+            )}
           </p>
           <div className="flex items-center gap-2 mt-2">
             <span className={cn("text-xs", getTypeColor())}>
