@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useCurrency } from "@/hooks/useCurrency";
 import { IncomeDialog } from "@/components/IncomeDialog";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
@@ -40,6 +41,7 @@ const Transactions = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
+  const { createNotification } = useNotifications();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -163,6 +165,25 @@ const Transactions = () => {
         toast({ title: "Ошибка", description: "Не удалось добавить доход", variant: "destructive" });
       } else {
         toast({ title: "Успешно", description: "Доход добавлен" });
+        
+        // Create additional notification for better UX
+        try {
+          const sourceName = incomeSources.find(s => s.id === income.sourceId)?.name || 'Неизвестный источник';
+          await createNotification(
+            'income',
+            'Доход добавлен',
+            `Получен доход ${formatAmount(income.amount)} от источника "${sourceName}"`,
+            { 
+              amount: income.amount, 
+              sourceId: income.sourceId, 
+              sourceName 
+            }
+          );
+        } catch (notificationError) {
+          console.error('Failed to create notification:', notificationError);
+          // Don't fail the whole operation if notification fails
+        }
+        
         fetchData();
       }
     }
@@ -200,6 +221,25 @@ const Transactions = () => {
         toast({ title: "Ошибка", description: "Не удалось добавить расход", variant: "destructive" });
       } else {
         toast({ title: "Успешно", description: "Расход добавлен" });
+        
+        // Create additional notification for better UX
+        try {
+          const categoryName = categories.find(c => c.id === expense.categoryId)?.name || 'Неизвестная категория';
+          await createNotification(
+            'expense',
+            'Расход добавлен',
+            `Потрачено ${formatAmount(expense.amount)} на категорию "${categoryName}"`,
+            { 
+              amount: expense.amount, 
+              categoryId: expense.categoryId, 
+              categoryName 
+            }
+          );
+        } catch (notificationError) {
+          console.error('Failed to create notification:', notificationError);
+          // Don't fail the whole operation if notification fails
+        }
+        
         fetchData();
       }
     }

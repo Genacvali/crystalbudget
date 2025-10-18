@@ -3,6 +3,7 @@ import { Navigation } from "./Navigation";
 import { MobileNav } from "./MobileNav";
 import { MonthSelector } from "./MonthSelector";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
+import { NotificationCenter } from "./NotificationCenter";
 import crystalLogo from "@/assets/crystal-logo.png";
 interface LayoutProps {
   children: ReactNode;
@@ -36,6 +37,7 @@ export function Layout({
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
+              <NotificationCenter />
               <div className="hidden lg:flex lg:min-w-[280px]">
                 {showMonthSelector && <MonthSelector selectedDate={selectedDate} onDateChange={onDateChange} />}
               </div>

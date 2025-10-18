@@ -18,6 +18,7 @@ import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 // import { PullToRefresh } from "@/components/PullToRefresh";
 import { useAuth } from "@/hooks/useAuth";
+import { useNotifications } from "@/hooks/useNotifications";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -36,6 +37,7 @@ const Dashboard = () => {
   const {
     formatAmount
   } = useCurrency();
+  const { createNotification } = useNotifications();
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomes, setIncomes] = useState<any[]>([]);
@@ -222,6 +224,25 @@ const Dashboard = () => {
         title: "Доход добавлен",
         description: "Транзакция успешно записана"
       });
+
+      // Create additional notification for better UX
+      try {
+        const sourceName = incomeSources.find(s => s.id === income.sourceId)?.name || 'Неизвестный источник';
+        await createNotification(
+          'income',
+          'Доход добавлен',
+          `Получен доход ${formatAmount(income.amount)} от источника "${sourceName}"`,
+          { 
+            amount: income.amount, 
+            sourceId: income.sourceId, 
+            transactionId: data.id,
+            sourceName 
+          }
+        );
+      } catch (notificationError) {
+        console.error('Failed to create notification:', notificationError);
+        // Don't fail the whole operation if notification fails
+      }
     } catch (error: any) {
       // Rollback on error
       setIncomes(prev => prev.filter(i => i.id !== tempIncome.id));
@@ -231,7 +252,7 @@ const Dashboard = () => {
         variant: "destructive"
       });
     }
-  }, [user, toast]);
+  }, [user, toast, createNotification, incomeSources, formatAmount]);
 
   const handleAddExpense = useCallback(async (expense: {
     categoryId: string;
@@ -276,6 +297,25 @@ const Dashboard = () => {
         title: "Расход добавлен",
         description: "Транзакция успешно записана"
       });
+
+      // Create additional notification for better UX
+      try {
+        const categoryName = categories.find(c => c.id === expense.categoryId)?.name || 'Неизвестная категория';
+        await createNotification(
+          'expense',
+          'Расход добавлен',
+          `Потрачено ${formatAmount(expense.amount)} на категорию "${categoryName}"`,
+          { 
+            amount: expense.amount, 
+            categoryId: expense.categoryId, 
+            transactionId: data.id,
+            categoryName 
+          }
+        );
+      } catch (notificationError) {
+        console.error('Failed to create notification:', notificationError);
+        // Don't fail the whole operation if notification fails
+      }
     } catch (error: any) {
       // Rollback on error
       setExpenses(prev => prev.filter(e => e.id !== tempExpense.id));
@@ -285,7 +325,7 @@ const Dashboard = () => {
         variant: "destructive"
       });
     }
-  }, [user, toast]);
+  }, [user, toast, createNotification, categories, formatAmount]);
 
   // Calculate source summaries
   const calculateSourceSummaries = (): SourceSummary[] => {
