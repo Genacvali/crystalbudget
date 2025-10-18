@@ -3,6 +3,8 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// Diagnostics toggle (set DEBUG_BALANCE=true in env to enable)
+const DEBUG_BALANCE = (Deno.env.get('DEBUG_BALANCE') || '').toLowerCase() === 'true';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
@@ -404,6 +406,9 @@ function getMainKeyboard() {
       [
         {
           text: '💰 Финансы'
+        },
+        {
+          text: '📊 Отчёты'
         }
       ],
       [
@@ -548,7 +553,61 @@ async function handleStart(chatId, telegramId, firstName, lastName, username) {
   // Check if already linked
   const userId = await getUserByTelegramId(telegramId);
   if (userId) {
-    await sendTelegramMessage(chatId, `👋 Привет, ${firstName}!\n\n` + `Ваш аккаунт связан с CrystalBudget.\n` + `Используйте кнопки меню для управления бюджетом.\n\n` + `💡 Нажмите ❓ Помощь для получения инструкций.`, getMainKeyboard());
+    // Get quick balance info
+    const effectiveUserId = await getEffectiveUserId(userId);
+    const currency = await getUserCurrency(effectiveUserId);
+    const symbol = currencySymbols[currency] || '₽';
+    
+    // Get current month data
+    const now = new Date();
+    // Use local month boundaries to match web app
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    
+    const { data: expenses } = await supabase
+      .from('expenses')
+      .select('amount')
+      .eq('user_id', userId)
+      .gte('date', startOfMonth.toISOString())
+      .lte('date', endOfMonth.toISOString());
+    
+    const { data: incomes } = await supabase
+      .from('incomes')
+      .select('amount')
+      .eq('user_id', userId)
+      .gte('date', startOfMonth.toISOString())
+      .lte('date', endOfMonth.toISOString());
+    
+    const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+    const totalIncomes = incomes?.reduce((sum, i) => sum + Number(i.amount), 0) || 0;
+    const balance = totalIncomes - totalExpenses;
+    
+    const balanceEmoji = balance > 0 ? '💚' : balance < 0 ? '❤️' : '💛';
+    const balanceSign = balance > 0 ? '+' : '';
+    
+    // Create inline keyboard with quick actions
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '💸 Быстрый расход', callback_data: 'quick_expense' },
+          { text: '💰 Быстрый доход', callback_data: 'quick_income' }
+        ],
+        [
+          { text: '📊 Подробная статистика', callback_data: 'detailed_stats' }
+        ]
+      ]
+    };
+    
+    await sendTelegramMessage(
+      chatId, 
+      `👋 <b>Привет, ${firstName}!</b>\n\n` +
+      `📊 <b>Баланс за ${now.toLocaleString('ru-RU', { month: 'long' })}:</b>\n` +
+      `${balanceEmoji} <b>${balanceSign}${balance.toLocaleString('ru-RU')} ${symbol}</b>\n\n` +
+      `💰 Доходы: <b>+${totalIncomes.toLocaleString('ru-RU')} ${symbol}</b>\n` +
+      `💸 Расходы: <b>-${totalExpenses.toLocaleString('ru-RU')} ${symbol}</b>\n\n` +
+      `Используйте кнопки меню для управления бюджетом.`,
+      keyboard
+    );
     return;
   }
   // Generate auth code
@@ -568,30 +627,35 @@ async function handleStart(chatId, telegramId, firstName, lastName, username) {
   await sendTelegramMessage(chatId, `👋 Привет, ${firstName}!\n\n` + `🔐 Ваш код авторизации:\n<code>${authCode}</code>\n\n` + `📱 Введите этот код на странице настроек в приложении CrystalBudget.\n\n` + `⏱ Код действителен 10 минут.`);
 }
 async function handleBalance(chatId, userId) {
-  // Get effective user ID (family owner if in family)
+  // Get user currency (use effectiveUserId for currency settings)
   const effectiveUserId = await getEffectiveUserId(userId);
-  // Get user currency
   const currency = await getUserCurrency(effectiveUserId);
-  // Check if user has a family
-  const { data: familyMember } = await supabase.from('family_members').select('family_id').eq('user_id', userId).maybeSingle();
-  // Get current month boundaries
+  // Get current month boundaries using local time (to match web app behaviour)
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
-  // Get all family members if user has a family
-  let familyUserIds = [
-    userId
-  ];
-  if (familyMember) {
-    const { data: familyMembers } = await supabase.from('family_members').select('user_id').eq('family_id', familyMember.family_id);
-    if (familyMembers) {
-      familyUserIds = familyMembers.map((m)=>m.user_id);
+  
+  // Resolve family scope: owner + members; if no family — only owner
+  let familyUserIds = [effectiveUserId];
+  const { data: family } = await supabase
+    .from('families')
+    .select('id')
+    .eq('owner_id', effectiveUserId)
+    .maybeSingle();
+  if (family?.id) {
+    const { data: members } = await supabase
+      .from('family_members')
+      .select('user_id')
+      .eq('family_id', family.id);
+    if (members && members.length > 0) {
+      familyUserIds = [effectiveUserId, ...members.map(m => m.user_id)];
     }
   }
-  // Get current month income and expenses (for all family members)
+
+  // Get current month income and expenses (family scope)
   const { data: incomes } = await supabase.from('incomes').select('amount').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
   const { data: expenses } = await supabase.from('expenses').select('amount').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
-  // Get previous months for carry-over balance (for all family members)
+  // Get previous months for carry-over balance (family scope)
   const { data: previousIncomes } = await supabase.from('incomes').select('amount').in('user_id', familyUserIds).lt('date', startOfMonth);
   const { data: previousExpenses } = await supabase.from('expenses').select('amount').in('user_id', familyUserIds).lt('date', startOfMonth);
   const currentMonthIncome = (incomes || []).reduce((sum, inc)=>sum + Number(inc.amount), 0);
@@ -600,12 +664,36 @@ async function handleBalance(chatId, userId) {
   const previousTotalIncome = (previousIncomes || []).reduce((sum, inc)=>sum + Number(inc.amount), 0);
   const previousTotalExpenses = (previousExpenses || []).reduce((sum, exp)=>sum + Number(exp.amount), 0);
   const carryOverBalance = previousTotalIncome - previousTotalExpenses;
-  const totalBalance = monthBalance + carryOverBalance;
+  const totalBalance = currentMonthIncome + carryOverBalance - currentMonthExpenses;
   const monthName = new Intl.DateTimeFormat('ru-RU', {
     month: 'long',
     year: 'numeric'
   }).format(now);
-  await sendTelegramMessage(chatId, `📊 <b>Баланс за ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}</b>\n` + `${monthBalance > 0 ? '✅' : monthBalance < 0 ? '❌' : '➖'} <b>${formatAmount(monthBalance, currency)}</b>\n` + `${monthBalance > 0 ? 'Профицит' : monthBalance < 0 ? 'Дефицит' : 'Ноль'}\n\n` + `📉 <b>Общие расходы</b>\n` + `<b>${formatAmount(currentMonthExpenses, currency)}</b>\n` + (currentMonthIncome > 0 ? `${Math.round(currentMonthExpenses / currentMonthIncome * 100)}% от дохода\n\n` : '\n') + `💰 <b>Общий баланс</b>\n` + `<b>${formatAmount(totalBalance, currency)}</b>\n` + (carryOverBalance !== 0 ? `${formatAmount(monthBalance, currency)} + ${formatAmount(carryOverBalance, currency)} остаток` : `Только за ${monthName}`), getMainKeyboard());
+  // Capitalize month (DateTimeFormat already includes "г.")
+  const formattedMonthName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+  let diagnostics = '';
+  if (DEBUG_BALANCE) {
+    diagnostics = `\n\n🛠️ Диагностика:\n` +
+      `• Диапазон: ${new Date(startOfMonth).toLocaleString('ru-RU')} — ${new Date(endOfMonth).toLocaleString('ru-RU')}\n` +
+      `• Режим: Семейный\n` +
+      `• Пользователи: ${familyUserIds.join(', ')}\n` +
+      `• Доходов: ${(incomes || []).length} на сумму ${formatAmount(currentMonthIncome, currency)}\n` +
+      `• Расходов: ${(expenses || []).length} на сумму ${formatAmount(currentMonthExpenses, currency)}`;
+  }
+  await sendTelegramMessage(
+    chatId,
+    `📊 <b>Баланс за ${formattedMonthName}</b>\n` +
+    `${monthBalance > 0 ? '✅' : monthBalance < 0 ? '❌' : '➖'} <b>${formatAmount(monthBalance, currency)}</b>\n` +
+    `${monthBalance > 0 ? 'Профицит' : monthBalance < 0 ? 'Дефицит' : 'Ноль'}\n\n` +
+    `📉 <b>Общие расходы</b>\n` +
+    `<b>${formatAmount(currentMonthExpenses, currency)}</b>\n` +
+    (currentMonthIncome > 0 ? `${Math.round(currentMonthExpenses / currentMonthIncome * 100)}% от дохода\n\n` : '\n') +
+    `💰 <b>Общий баланс</b>\n` +
+    `<b>${formatAmount(totalBalance, currency)}</b>\n` +
+    `Только за ${formattedMonthName}` +
+    diagnostics,
+    getMainKeyboard()
+  );
 }
 async function handleCategories(chatId, userId) {
   // Get effective user ID (family owner if in family)
@@ -1028,6 +1116,177 @@ async function handleCallbackQuery(query) {
       return;
     }
   }
+  
+  // Handle delete expense
+  if (data.startsWith('del_exp_')) {
+    const expenseId = data.replace('del_exp_', '');
+    
+    // 1) Get expense basic fields
+    const { data: expense } = await supabase
+      .from('expenses')
+      .select('amount, category_id')
+      .eq('id', expenseId)
+      .single();
+    
+    // 2) Resolve category name/icon separately (more reliable than implicit join)
+    let categoryInfo = 'Категория';
+    if (expense?.category_id) {
+      const { data: cat } = await supabase
+        .from('categories')
+        .select('name, icon')
+        .eq('id', expense.category_id)
+        .maybeSingle();
+      if (cat) {
+        categoryInfo = `${cat.icon || ''} ${cat.name}`.trim();
+      }
+    }
+    
+    const currency = await getUserCurrency(userId);
+    const symbol = currencySymbols[currency] || '₽';
+    const amountNumber = typeof expense?.amount === 'number' ? expense.amount : Number(expense?.amount || 0);
+    const amountText = amountNumber.toLocaleString('ru-RU');
+    
+    // Create confirmation keyboard
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Да, удалить', callback_data: `confirm_del_exp_${expenseId}` },
+          { text: '❌ Отмена', callback_data: 'cancel_delete' }
+        ]
+      ]
+    };
+    
+    await sendTelegramMessage(
+      chatId,
+      `⚠️ <b>Подтвердите удаление</b>\n\n` +
+      `💸 Расход: <b>${amountText} ${symbol}</b>\n` +
+      `📁 Категория: ${categoryInfo}\n\n` +
+      `Это действие нельзя отменить.`,
+      keyboard
+    );
+    return;
+  }
+  
+  // Handle confirm delete expense
+  if (data.startsWith('confirm_del_exp_')) {
+    const expenseId = data.replace('confirm_del_exp_', '');
+    
+    const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', expenseId)
+      .eq('user_id', userId);
+    
+    if (error) {
+      await sendTelegramMessage(chatId, '❌ Ошибка удаления расхода.');
+    } else {
+      await sendTelegramMessage(chatId, '✅ <b>Расход удалён</b>', getMainKeyboard());
+    }
+    return;
+  }
+  
+  // Handle delete income
+  if (data.startsWith('del_inc_')) {
+    const incomeId = data.replace('del_inc_', '');
+    
+    // Get income details before deleting
+    const { data: income } = await supabase
+      .from('incomes')
+      .select('amount, source_id, income_sources(name)')
+      .eq('id', incomeId)
+      .single();
+    
+    // Create confirmation keyboard
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Да, удалить', callback_data: `confirm_del_inc_${incomeId}` },
+          { text: '❌ Отмена', callback_data: 'cancel_delete' }
+        ]
+      ]
+    };
+    
+    const sourceName = income?.income_sources?.name || 'Источник';
+    const currency = await getUserCurrency(userId);
+    const symbol = currencySymbols[currency] || '₽';
+    
+    await sendTelegramMessage(
+      chatId,
+      `⚠️ <b>Подтвердите удаление</b>\n\n` +
+      `💰 Доход: <b>${income?.amount.toLocaleString('ru-RU')} ${symbol}</b>\n` +
+      `💵 Источник: ${sourceName}\n\n` +
+      `Это действие нельзя отменить.`,
+      keyboard
+    );
+    return;
+  }
+  
+  // Handle confirm delete income
+  if (data.startsWith('confirm_del_inc_')) {
+    const incomeId = data.replace('confirm_del_inc_', '');
+    
+    const { error } = await supabase
+      .from('incomes')
+      .delete()
+      .eq('id', incomeId)
+      .eq('user_id', userId);
+    
+    if (error) {
+      await sendTelegramMessage(chatId, '❌ Ошибка удаления дохода.');
+    } else {
+      await sendTelegramMessage(chatId, '✅ <b>Доход удалён</b>', getMainKeyboard());
+    }
+    return;
+  }
+  
+  // Handle cancel delete
+  if (data === 'cancel_delete') {
+    await sendTelegramMessage(chatId, '❌ Удаление отменено', getMainKeyboard());
+    return;
+  }
+  
+  // Handle edit expense (placeholder for now)
+  if (data.startsWith('edit_exp_')) {
+    await sendTelegramMessage(
+      chatId, 
+      '✏️ <b>Редактирование расхода</b>\n\n' +
+      'Для редактирования транзакции используйте веб-приложение CrystalBudget.\n\n' +
+      '💡 Скоро функция редактирования появится и в боте!',
+      getMainKeyboard()
+    );
+    return;
+  }
+  
+  // Handle edit income (placeholder for now)
+  if (data.startsWith('edit_inc_')) {
+    await sendTelegramMessage(
+      chatId, 
+      '✏️ <b>Редактирование дохода</b>\n\n' +
+      'Для редактирования транзакции используйте веб-приложение CrystalBudget.\n\n' +
+      '💡 Скоро функция редактирования появится и в боте!',
+      getMainKeyboard()
+    );
+    return;
+  }
+  
+  // Handle statistics buttons
+  if (data === 'stats_expenses' || data === 'stats_incomes' || data === 'detailed_stats') {
+    await handleBalance(chatId, userId);
+    return;
+  }
+  
+  // Handle quick expense
+  if (data === 'quick_expense') {
+    await startAddExpense(chatId, userId);
+    return;
+  }
+  
+  // Handle quick income
+  if (data === 'quick_income') {
+    await startAddIncome(chatId, userId);
+    return;
+  }
+  
   // Unknown callback data
   console.log(`Unknown callback data: ${data}`);
   await sendTelegramMessage(chatId, '❓ Неизвестная команда');
@@ -1059,32 +1318,94 @@ async function handleTextMessage(message, userId) {
     }
     const description = parts.slice(1).join(' ') || null;
     if (session.type === 'expense') {
-      const { error } = await supabase.from('expenses').insert({
+      const { data: expenseData, error } = await supabase.from('expenses').insert({
         user_id: userId,
         amount: amount,
         category_id: session.categoryId,
         description: description,
         date: new Date().toISOString()
-      });
+      }).select().single();
       if (error) {
         await sendTelegramMessage(chatId, '❌ Ошибка добавления расхода.');
       } else {
         const symbol = currencySymbols[currency] || '₽';
-        await sendTelegramMessage(chatId, `✅ <b>Расход добавлен!</b>\n\n` + `💸 Сумма: <b>${amount.toLocaleString('ru-RU')} ${symbol}</b>\n` + (description ? `📝 ${description}` : ''), getMainKeyboard());
+        
+        // Get category name for display
+        const { data: category } = await supabase
+          .from('categories')
+          .select('name, icon')
+          .eq('id', session.categoryId)
+          .single();
+        
+        const categoryInfo = category ? `${category.icon} ${category.name}` : 'Категория';
+        
+        // Create inline keyboard with action buttons
+        const keyboard = {
+          inline_keyboard: [
+            [
+              { text: '✏️ Редактировать', callback_data: `edit_exp_${expenseData.id}` },
+              { text: '🗑️ Удалить', callback_data: `del_exp_${expenseData.id}` }
+            ],
+            [
+              { text: '📊 Статистика', callback_data: 'stats_expenses' }
+            ]
+          ]
+        };
+        
+        await sendTelegramMessage(
+          chatId, 
+          `✅ <b>Расход добавлен!</b>\n\n` + 
+          `💸 Сумма: <b>${amount.toLocaleString('ru-RU')} ${symbol}</b>\n` + 
+          `📁 Категория: ${categoryInfo}\n` +
+          (description ? `📝 ${description}\n` : '') +
+          `\n⏰ ${new Date().toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`,
+          keyboard
+        );
       }
     } else if (session.type === 'income') {
-      const { error} = await supabase.from('incomes').insert({
+      const { data: incomeData, error} = await supabase.from('incomes').insert({
         user_id: userId,
         amount: amount,
         source_id: session.sourceId,
         description: description,
         date: new Date().toISOString()
-      });
+      }).select().single();
       if (error) {
         await sendTelegramMessage(chatId, '❌ Ошибка добавления дохода.');
       } else {
         const symbol = currencySymbols[currency] || '₽';
-        await sendTelegramMessage(chatId, `✅ <b>Доход добавлен!</b>\n\n` + `💰 Сумма: <b>${amount.toLocaleString('ru-RU')} ${symbol}</b>\n` + (description ? `📝 ${description}` : ''), getMainKeyboard());
+        
+        // Get source name for display
+        const { data: source } = await supabase
+          .from('income_sources')
+          .select('name')
+          .eq('id', session.sourceId)
+          .single();
+        
+        const sourceName = source ? source.name : 'Источник';
+        
+        // Create inline keyboard with action buttons
+        const keyboard = {
+          inline_keyboard: [
+            [
+              { text: '✏️ Редактировать', callback_data: `edit_inc_${incomeData.id}` },
+              { text: '🗑️ Удалить', callback_data: `del_inc_${incomeData.id}` }
+            ],
+            [
+              { text: '📊 Статистика', callback_data: 'stats_incomes' }
+            ]
+          ]
+        };
+        
+        await sendTelegramMessage(
+          chatId, 
+          `✅ <b>Доход добавлен!</b>\n\n` + 
+          `💰 Сумма: <b>${amount.toLocaleString('ru-RU')} ${symbol}</b>\n` + 
+          `💵 Источник: ${sourceName}\n` +
+          (description ? `📝 ${description}\n` : '') +
+          `\n⏰ ${new Date().toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`,
+          keyboard
+        );
       }
     }
     await deleteSession(telegramId);
@@ -1093,7 +1414,46 @@ async function handleTextMessage(message, userId) {
   // Handle button presses
   switch(text){
     case '🔙 Назад':
-      await sendTelegramMessage(chatId, '🏠 Главное меню', getMainKeyboard());
+      // Show main menu with balance info
+      const effectiveUserId = await getEffectiveUserId(userId);
+      const now = new Date();
+    // Use UTC month boundaries to avoid timezone issues
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      
+      const { data: expenses } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('user_id', userId)
+        .gte('date', startOfMonth.toISOString())
+        .lte('date', endOfMonth.toISOString());
+      
+      const { data: incomes } = await supabase
+        .from('incomes')
+        .select('amount')
+        .eq('user_id', userId)
+        .gte('date', startOfMonth.toISOString())
+        .lte('date', endOfMonth.toISOString());
+      
+      const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const totalIncomes = incomes?.reduce((sum, i) => sum + Number(i.amount), 0) || 0;
+      const balance = totalIncomes - totalExpenses;
+      
+      const balanceEmoji = balance > 0 ? '💚' : balance < 0 ? '❤️' : '💛';
+      const balanceSign = balance > 0 ? '+' : '';
+      const symbol = currencySymbols[currency] || '₽';
+      
+      const monthLabel = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(now);
+      const formattedMonth = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
+      await sendTelegramMessage(
+        chatId, 
+        `🏠 <b>Главное меню</b>\n\n` +
+        `📊 <b>Баланс за ${formattedMonth}</b>\n` +
+        `${balanceEmoji} <b>${balanceSign}${balance.toLocaleString('ru-RU')} ${symbol}</b>\n\n` +
+        `💰 Доходы: +${totalIncomes.toLocaleString('ru-RU')} ${symbol}\n` +
+        `💸 Расходы: -${totalExpenses.toLocaleString('ru-RU')} ${symbol}`,
+        getMainKeyboard()
+      );
       break;
     case '💰 Финансы':
       await sendTelegramMessage(chatId, '💰 <b>Финансы</b>\n\nВыберите действие:', getFinanceKeyboard());
