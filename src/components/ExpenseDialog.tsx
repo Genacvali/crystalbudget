@@ -59,6 +59,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
   }, [open, editingExpense, convertFromRubles]);
 
   const handleSave = () => {
+    console.log('ExpenseDialog handleSave called', { categoryId, amount, date, description });
     try {
       const validated = expenseSchema.parse({
         categoryId,
@@ -67,8 +68,12 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         description: description.trim() || undefined,
       });
 
+      console.log('Validation passed', validated);
+
       // Конвертируем сумму в рубли перед сохранением
       const amountInRubles = convertToRubles(validated.amount);
+
+      console.log('Calling onSave with', { categoryId: validated.categoryId, amount: amountInRubles, date: validated.date });
 
       onSave({
         categoryId: validated.categoryId,
@@ -78,6 +83,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
       });
       onOpenChange(false);
     } catch (error) {
+      console.error('ExpenseDialog validation error:', error);
       if (error instanceof z.ZodError) {
         toast({
           title: "Ошибка валидации",
@@ -189,7 +195,10 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Отмена
           </Button>
-          <Button onClick={handleSave}>
+          <Button onClick={() => {
+            console.log('Add button clicked in ExpenseDialog');
+            handleSave();
+          }}>
             {editingExpense ? "Сохранить" : "Добавить"}
           </Button>
         </DialogFooter>

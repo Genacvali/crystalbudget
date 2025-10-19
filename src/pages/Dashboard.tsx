@@ -514,14 +514,20 @@ const Dashboard = () => {
         <div className="flex gap-2 sm:gap-3">
           <Button 
             className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70 text-success-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]" 
-            onClick={() => setIncomeDialogOpen(true)}
+            onClick={() => {
+              console.log('Income button clicked');
+              setIncomeDialogOpen(true);
+            }}
           >
             <Plus className="h-5 w-5 mr-1 sm:mr-2 transition-transform duration-300 hover:rotate-90" strokeWidth={2.5} />
             <span className="hidden xs:inline">Добавить </span>Доход
           </Button>
           <Button 
             className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-destructive to-destructive/80 hover:from-destructive/90 hover:to-destructive/70 text-destructive-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]" 
-            onClick={() => setExpenseDialogOpen(true)}
+            onClick={() => {
+              console.log('Expense button clicked');
+              setExpenseDialogOpen(true);
+            }}
           >
             <Plus className="h-5 w-5 mr-1 sm:mr-2 transition-transform duration-300 hover:rotate-90" strokeWidth={2.5} />
             <span className="hidden xs:inline">Добавить </span>Расход

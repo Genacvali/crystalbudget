@@ -36,8 +36,24 @@ export function useCurrency() {
     return `${amount.toLocaleString('ru-RU')} ${symbol}`;
   };
 
+  // Convert from current currency to RUB (for storage)
+  const convertToRubles = (amount: number): number => {
+    // For now, we store everything in the selected currency
+    // In the future, this could use exchange rates
+    return amount;
+  };
+
+  // Convert from RUB to current currency (for display)
+  const convertFromRubles = (amount: number): number => {
+    // For now, we store everything in the selected currency
+    // In the future, this could use exchange rates
+    return amount;
+  };
+
   return {
     currency,
-    formatAmount
+    formatAmount,
+    convertToRubles,
+    convertFromRubles
   };
 }
