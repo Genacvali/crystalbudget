@@ -278,17 +278,18 @@ async function getUserContext(userId: string) {
   
   trackMetric('cacheMiss');
   
-  // Parallel queries for better performance
+  // First get effectiveUserId to determine which user's categories/sources to fetch
+  const effectiveUserIdResult = await getEffectiveUserIdUncached(userId);
+  
+  // Now fetch categories and sources for the effective user (family owner for members)
   const [
-    effectiveUserIdResult,
     currencyResult,
     categoriesResult,
     sourcesResult
   ] = await Promise.all([
-    getEffectiveUserIdUncached(userId),
     getUserCurrencyUncached(userId),
-    supabase.from('categories').select('id, name, icon').eq('user_id', userId).order('name'),
-    supabase.from('income_sources').select('id, name').eq('user_id', userId).order('name')
+    supabase.from('categories').select('id, name, icon').eq('user_id', effectiveUserIdResult).order('name'),
+    supabase.from('income_sources').select('id, name').eq('user_id', effectiveUserIdResult).order('name')
   ]);
   
   const context: UserContextCache = {
@@ -953,9 +954,9 @@ async function handleCallbackQuery(query) {
     } else {
       expenseDate = new Date().toISOString();
     }
-    console.log(`Creating expense: userId=${userId}, categoryId=${categoryId}, amount=${receiptData.amount}, date=${expenseDate}, originalDate=${receiptData.date}`);
+    console.log(`Creating expense: userId=${effectiveUserId}, categoryId=${categoryId}, amount=${receiptData.amount}, date=${expenseDate}, originalDate=${receiptData.date}`);
     const { data: insertedExpense, error } = await supabase.from('expenses').insert({
-      user_id: userId,
+      user_id: effectiveUserId,
       category_id: categoryId,
       amount: receiptData.amount,
       description: receiptData.description || receiptData.store,
@@ -988,7 +989,7 @@ async function handleCallbackQuery(query) {
     }
     // Create expense
     const { error } = await supabase.from('expenses').insert({
-      user_id: userId,
+      user_id: effectiveUserId,
       category_id: categoryId,
       amount: session.amount,
       description: session.description,
@@ -1019,7 +1020,7 @@ async function handleCallbackQuery(query) {
     }
     // Create income
     const { error } = await supabase.from('incomes').insert({
-      user_id: userId,
+      user_id: effectiveUserId,
       source_id: sourceId,
       amount: session.amount,
       description: session.description,
@@ -1319,7 +1320,7 @@ async function handleTextMessage(message, userId) {
     const description = parts.slice(1).join(' ') || null;
     if (session.type === 'expense') {
       const { data: expenseData, error } = await supabase.from('expenses').insert({
-        user_id: userId,
+        user_id: effectiveUserId,
         amount: amount,
         category_id: session.categoryId,
         description: description,
@@ -1364,7 +1365,7 @@ async function handleTextMessage(message, userId) {
       }
     } else if (session.type === 'income') {
       const { data: incomeData, error} = await supabase.from('incomes').insert({
-        user_id: userId,
+        user_id: effectiveUserId,
         amount: amount,
         source_id: session.sourceId,
         description: description,
@@ -1486,7 +1487,7 @@ async function handleVoiceMessage(message, userId) {
         'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
       },
       body: JSON.stringify({
-        userId: userId,
+        userId: effectiveUserId,
         audioUrl: fileUrl,
         categories: categories,
         sources: sources
@@ -1620,7 +1621,7 @@ async function handlePhotoMessage(message, userId) {
         'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
       },
       body: JSON.stringify({
-        userId: userId,
+        userId: effectiveUserId,
         imageUrl: fileUrl,
         categories: categories.map(c => ({ name: c.name, icon: c.icon }))
       })
