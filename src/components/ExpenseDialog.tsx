@@ -56,10 +56,10 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
       setDate(new Date());
       setDescription("");
     }
-  }, [open, editingExpense, convertFromRubles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editingExpense?.id]);
 
   const handleSave = () => {
-    console.log('ExpenseDialog handleSave called', { categoryId, amount, date, description });
     try {
       const validated = expenseSchema.parse({
         categoryId,
@@ -68,12 +68,8 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         description: description.trim() || undefined,
       });
 
-      console.log('Validation passed', validated);
-
       // Конвертируем сумму в рубли перед сохранением
       const amountInRubles = convertToRubles(validated.amount);
-
-      console.log('Calling onSave with', { categoryId: validated.categoryId, amount: amountInRubles, date: validated.date });
 
       onSave({
         categoryId: validated.categoryId,
@@ -83,7 +79,6 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
       });
       onOpenChange(false);
     } catch (error) {
-      console.error('ExpenseDialog validation error:', error);
       if (error instanceof z.ZodError) {
         toast({
           title: "Ошибка валидации",
@@ -123,10 +118,12 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
             <Label htmlFor="amount">Сумма</Label>
             <Input
               id="amount"
+              type="text"
               inputMode="decimal"
               placeholder="1000"
               value={amount}
               onChange={(e) => handleNumericInput(e.target.value, setAmount)}
+              onFocus={(e) => e.target.select()}
             />
           </div>
           <div className="grid gap-2">
@@ -187,6 +184,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
               placeholder="Дополнительная информация..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              onFocus={(e) => e.target.select()}
               rows={3}
             />
           </div>

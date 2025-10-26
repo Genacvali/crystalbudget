@@ -90,7 +90,8 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
       setDate(new Date());
       setDescription("");
     }
-  }, [open, editingIncome, convertFromRubles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editingIncome?.id]);
 
   const handleSave = () => {
     try {
@@ -169,10 +170,12 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
             <Label htmlFor="amount">Сумма</Label>
             <Input
               id="amount"
+              type="text"
               inputMode="decimal"
               placeholder="50000"
               value={amount}
               onChange={(e) => handleNumericInput(e.target.value, setAmount)}
+              onFocus={(e) => e.target.select()}
             />
           </div>
           <div className="grid gap-2">
@@ -233,6 +236,7 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
               placeholder="Дополнительная информация..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              onFocus={(e) => e.target.select()}
               rows={3}
             />
           </div>
