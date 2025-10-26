@@ -363,28 +363,62 @@ const Dashboard = () => {
       });
 
       // Calculate expenses linked to this source (for totalSpent display)
-      // Include both new allocation system and legacy linkedSourceId
-      const linkedCategoryIds: string[] = [];
+      // For categories with multiple sources, distribute expenses proportionally
+      let totalSpent = 0;
       
       categories.forEach(category => {
-        // New allocation system
+        const categoryExpenses = expenses
+          .filter(exp => exp.category_id === category.id)
+          .reduce((sum, exp) => sum + Number(exp.amount), 0);
+        
+        if (categoryExpenses === 0) return;
+        
+        // Calculate total budget allocated to this category
+        let categoryTotalBudget = 0;
+        let budgetFromThisSource = 0;
+        
         if (category.allocations && category.allocations.length > 0) {
-          const hasAllocationFromSource = category.allocations.some(
-            alloc => alloc.incomeSourceId === source.id
-          );
-          if (hasAllocationFromSource) {
-            linkedCategoryIds.push(category.id);
+          // New multi-source allocation system
+          category.allocations.forEach(alloc => {
+            let allocAmount = 0;
+            if (alloc.allocationType === 'amount') {
+              allocAmount = alloc.allocationValue;
+            } else if (alloc.allocationType === 'percent') {
+              const sourceIncomes = incomes.filter(inc => inc.source_id === alloc.incomeSourceId);
+              const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+              const expectedSourceAmount = incomeSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
+              const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+              allocAmount = base * alloc.allocationValue / 100;
+            }
+            
+            categoryTotalBudget += allocAmount;
+            if (alloc.incomeSourceId === source.id) {
+              budgetFromThisSource += allocAmount;
+            }
+          });
+        } else {
+          // Legacy system
+          if (category.linkedSourceId === source.id) {
+            if (category.allocationAmount) {
+              budgetFromThisSource = category.allocationAmount;
+              categoryTotalBudget = category.allocationAmount;
+            } else if (category.allocationPercent) {
+              const sourceIncomes = incomes.filter(inc => inc.source_id === category.linkedSourceId);
+              const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+              const expectedSourceAmount = incomeSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
+              const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+              budgetFromThisSource = base * category.allocationPercent / 100;
+              categoryTotalBudget = budgetFromThisSource;
+            }
           }
         }
-        // Legacy system
-        else if (category.linkedSourceId === source.id) {
-          linkedCategoryIds.push(category.id);
+        
+        // Distribute expenses proportionally
+        if (categoryTotalBudget > 0 && budgetFromThisSource > 0) {
+          const proportion = budgetFromThisSource / categoryTotalBudget;
+          totalSpent += categoryExpenses * proportion;
         }
       });
-      
-      const totalSpent = expenses
-        .filter(exp => linkedCategoryIds.includes(exp.category_id))
-        .reduce((sum, exp) => sum + Number(exp.amount), 0);
       
       // Remaining is based on allocated amounts, not spent
       const remaining = totalIncome - totalAllocated;

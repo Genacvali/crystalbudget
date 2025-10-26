@@ -1,8 +1,10 @@
 import { TrendingUp, Pencil, Trash2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { IncomeSource, SourceSummary } from "@/types/budget";
 import { useCurrency } from "@/hooks/useCurrency";
+import { cn } from "@/lib/utils";
 
 interface IncomeSourceCardProps {
   source: IncomeSource;
@@ -12,10 +14,6 @@ interface IncomeSourceCardProps {
   compact?: boolean;
 }
 
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
-}
-
 export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = false }: IncomeSourceCardProps) {
   const { formatAmount } = useCurrency();
   const spentPercentage = summary.totalIncome > 0
@@ -23,6 +21,18 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
     : 0;
 
   const hasDebt = summary.debt > 0;
+  
+  // Определяем статус и цвет прогресс-бара как в CategoryCard
+  const getProgressStatus = () => {
+    if (spentPercentage > 100) return { label: 'Превышен', color: 'destructive' as const };
+    if (spentPercentage > 90) return { label: 'Критично', color: 'warning' as const };
+    if (spentPercentage > 70) return { label: 'Внимание', color: 'warning' as const };
+    if (spentPercentage > 50) return { label: 'Норма', color: 'default' as const };
+    return { label: 'Отлично', color: 'success' as const };
+  };
+
+  const progressStatus = getProgressStatus();
+  const isOverSpent = spentPercentage > 100;
 
   return (
     <div className="bg-card rounded-lg border p-3 hover:shadow-md transition-all hover:border-primary/50">
@@ -86,9 +96,20 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Использовано</span>
-                <span className="font-medium">{spentPercentage.toFixed(0)}%</span>
+                <span className={cn(
+                  "font-bold",
+                  isOverSpent ? "text-destructive" : "text-foreground"
+                )}>
+                  {spentPercentage.toFixed(0)}%
+                </span>
               </div>
-              <Progress value={spentPercentage} className="h-2" />
+              <Progress 
+                value={Math.min(spentPercentage, 100)} 
+                className={cn(
+                  "h-2 rounded-full transition-all duration-500",
+                  isOverSpent && "bg-destructive/20"
+                )}
+              />
             </div>
 
             <div className="pt-2 border-t">
@@ -97,7 +118,7 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                   "text-xs font-medium",
                   hasDebt ? "text-destructive" : "text-success"
                 )}>
-                  {hasDebt ? "Долг" : "Остаток"}
+                  {hasDebt ? "Долг после распределения" : "Остаток после распределения"}
                 </span>
                 <div className="flex items-center gap-1">
                   <TrendingUp className={cn(
