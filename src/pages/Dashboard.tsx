@@ -50,6 +50,7 @@ const Dashboard = () => {
   const [telegramGuideOpen, setTelegramGuideOpen] = useState(false);
   const [carryOverBalance, setCarryOverBalance] = useState(0);
   const [categoryDebts, setCategoryDebts] = useState<Record<string, number>>({});
+  const [categoryCarryOvers, setCategoryCarryOvers] = useState<Record<string, number>>({});
   const [categorySortBy, setCategorySortBy] = useState<"name" | "spent" | "remaining">("name");
   const [compactView, setCompactView] = useState(() => {
     const saved = localStorage.getItem('dashboard_compact_view');
@@ -188,8 +189,9 @@ const Dashboard = () => {
       } = await supabase.from('expenses').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousExpensesError) throw previousExpensesError;
 
-      // Calculate debts for each category from previous month
+      // Calculate debts and carry-overs for each category from previous month
       const debts: Record<string, number> = {};
+      const carryOvers: Record<string, number> = {};
       console.log('Previous month range:', previousMonthStart, '-', previousMonthEnd);
       console.log('Previous incomes:', previousIncomesData?.length);
       console.log('Previous expenses:', previousExpensesData?.length);
@@ -227,15 +229,24 @@ const Dashboard = () => {
           .filter(exp => exp.category_id === category.id)
           .reduce((sum, exp) => sum + Number(exp.amount), 0);
 
+        const balance = allocated - spent;
+        
         // If overspent, save the debt
-        if (spent > allocated) {
-          debts[category.id] = spent - allocated;
-          console.log(`Category ${category.name} has debt: spent=${spent}, allocated=${allocated}, debt=${spent - allocated}`);
+        if (balance < 0) {
+          debts[category.id] = Math.abs(balance);
+          console.log(`Category ${category.name} has debt: spent=${spent}, allocated=${allocated}, debt=${Math.abs(balance)}`);
+        } 
+        // If under-spent, save the carry-over
+        else if (balance > 0) {
+          carryOvers[category.id] = balance;
+          console.log(`Category ${category.name} has carry-over: spent=${spent}, allocated=${allocated}, carryOver=${balance}`);
         }
       });
 
       setCategoryDebts(debts);
+      setCategoryCarryOvers(carryOvers);
       console.log('Category debts from previous month:', debts);
+      console.log('Category carry-overs from previous month:', carryOvers);
     } catch (error: any) {
       toast({
         title: "Ошибка загрузки",
@@ -532,15 +543,20 @@ const Dashboard = () => {
       }
       const spent = expenses.filter(exp => exp.category_id === category.id).reduce((sum, exp) => sum + Number(exp.amount), 0);
       
-      // Get debt from previous month
+      // Get debt and carry-over from previous month
       const debt = categoryDebts[category.id] || 0;
+      const carryOver = categoryCarryOvers[category.id] || 0;
+      
+      // Add carry-over to allocated budget
+      const totalAllocated = allocated + carryOver;
       
       return {
         categoryId: category.id,
-        allocated,
+        allocated: totalAllocated, // Include carry-over in allocated
         spent, // Current month spending only
-        remaining: allocated - spent - debt, // Subtract debt from remaining budget
-        debt // Debt from previous month
+        remaining: totalAllocated - spent - debt, // Add carry-over, subtract debt
+        debt, // Debt from previous month
+        carryOver // Positive balance from previous month
       };
     });
   };
@@ -573,7 +589,7 @@ const Dashboard = () => {
   
   const categoryBudgets = useMemo(
     () => calculateCategoryBudgets(),
-    [categories, incomes, expenses, incomeSources, categoryDebts]
+    [categories, incomes, expenses, incomeSources, categoryDebts, categoryCarryOvers]
   );
   
   const monthName = useMemo(

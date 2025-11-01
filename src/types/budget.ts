@@ -54,6 +54,7 @@ export interface CategoryBudget {
   spent: number;
   remaining: number;
   debt?: number; // Debt from previous month
+  carryOver?: number; // Positive balance from previous month
 }
 
 export interface SourceSummary {

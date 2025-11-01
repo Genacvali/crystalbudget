@@ -138,12 +138,19 @@ export function CategoryCard({
               <span className="text-muted-foreground">из {formatAmount(budget.allocated)}</span>
             </div>
             
-            {/* Задолженность из предыдущего месяца */}
-            {budget.debt && budget.debt > 0 && (
-              <div className="text-[10px] text-orange-600 dark:text-orange-400 font-medium mt-0.5">
-                Долг: {formatAmount(budget.debt)}
+            {/* Перенос остатка из предыдущего месяца */}
+            {budget.carryOver && budget.carryOver > 0 ? (
+              <div className="text-[10px] text-blue-600 dark:text-blue-400 font-medium mt-0.5">
+                Перенос: +{formatAmount(budget.carryOver)}
               </div>
-            )}
+            ) : null}
+            
+            {/* Задолженность из предыдущего месяца */}
+            {budget.debt && budget.debt > 0 ? (
+              <div className="text-[10px] text-orange-600 dark:text-orange-400 font-medium mt-0.5">
+                Долг: -{formatAmount(budget.debt)}
+              </div>
+            ) : null}
           </div>
           
           {/* Процент */}
@@ -154,16 +161,16 @@ export function CategoryCard({
             )}>
               {usedPercentage.toFixed(0)}%
             </div>
-            {!isOverBudget && remaining > 0 && (
+            {!isOverBudget && remaining > 0 ? (
               <div className="text-[10px] text-success font-medium">
                 {formatAmount(remaining)}
               </div>
-            )}
-            {isOverBudget && (
+            ) : null}
+            {isOverBudget ? (
               <div className="text-[10px] text-destructive font-medium">
                 +{formatAmount(Math.abs(remaining))}
               </div>
-            )}
+            ) : null}
           </div>
           
           {/* Кнопки */}
@@ -259,11 +266,20 @@ export function CategoryCard({
           </div>
         </div>
 
+        {/* Перенос остатка из предыдущего месяца */}
+        {budget.carryOver && budget.carryOver > 0 ? (
+          <div className="text-center py-1 px-2 bg-blue-500/10 rounded border border-blue-500/20">
+            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+              Перенос с прошлого месяца: +{formatAmount(budget.carryOver)}
+            </span>
+          </div>
+        ) : null}
+
         {/* Задолженность из предыдущего месяца */}
         {budget.debt && budget.debt > 0 ? (
           <div className="text-center py-1 px-2 bg-orange-500/10 rounded border border-orange-500/20">
             <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
-              Долг с прошлого месяца: {formatAmount(budget.debt)}
+              Долг с прошлого месяца: -{formatAmount(budget.debt)}
             </span>
           </div>
         ) : null}
