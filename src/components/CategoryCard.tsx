@@ -1,4 +1,4 @@
-npm installimport { Pencil, Trash2, AlertCircle, TrendingUp, Plus } from "lucide-react";
+import { Pencil, Trash2, AlertCircle, TrendingUp, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -311,7 +311,7 @@ export function CategoryCard({
               >
                 <div 
                   className="w-3 h-3 rounded-full shrink-0 ring-2 ring-offset-1 ring-offset-card" 
-                  style={{ backgroundColor: source.color, ringColor: source.color }}
+                  style={{ backgroundColor: source.color }}
                 />
                 <span className="text-foreground flex-1 truncate font-medium">{source.name}</span>
                 <span className="font-semibold shrink-0 text-foreground">
