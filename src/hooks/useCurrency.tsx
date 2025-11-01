@@ -33,7 +33,7 @@ export function useCurrency() {
 
   const formatAmount = (amount: number): string => {
     const symbol = currencySymbols[currency] || "₽";
-    return `${amount.toLocaleString('ru-RU')} ${symbol}`;
+    return `${Math.round(amount).toLocaleString('ru-RU')} ${symbol}`;
   };
 
   // Convert from current currency to RUB (for storage)
