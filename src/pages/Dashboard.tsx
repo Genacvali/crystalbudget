@@ -49,6 +49,7 @@ const Dashboard = () => {
   const [quickGuideOpen, setQuickGuideOpen] = useState(false);
   const [telegramGuideOpen, setTelegramGuideOpen] = useState(false);
   const [carryOverBalance, setCarryOverBalance] = useState(0);
+  const [categoryDebts, setCategoryDebts] = useState<Record<string, number>>({});
   const [categorySortBy, setCategorySortBy] = useState<"name" | "spent" | "remaining">("name");
   const [compactView, setCompactView] = useState(() => {
     const saved = localStorage.getItem('dashboard_compact_view');
@@ -170,6 +171,71 @@ const Dashboard = () => {
       } = await supabase.from('expenses').select('*').gte('date', startOfMonth).lte('date', endOfMonth);
       if (expensesError) throw expensesError;
       setExpenses(expensesData || []);
+
+      // Calculate category debts from previous month
+      const previousMonthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1).toISOString();
+      const previousMonthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 0, 23, 59, 59).toISOString();
+
+      const {
+        data: previousIncomesData,
+        error: previousIncomesError
+      } = await supabase.from('incomes').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      if (previousIncomesError) throw previousIncomesError;
+
+      const {
+        data: previousExpensesData,
+        error: previousExpensesError
+      } = await supabase.from('expenses').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      if (previousExpensesError) throw previousExpensesError;
+
+      // Calculate debts for each category from previous month
+      const debts: Record<string, number> = {};
+      console.log('Previous month range:', previousMonthStart, '-', previousMonthEnd);
+      console.log('Previous incomes:', previousIncomesData?.length);
+      console.log('Previous expenses:', previousExpensesData?.length);
+      
+      mappedCategories.forEach(category => {
+        let allocated = 0;
+        
+        if (category.allocations && category.allocations.length > 0) {
+          category.allocations.forEach(alloc => {
+            if (alloc.allocationType === 'amount') {
+              allocated += alloc.allocationValue;
+            } else if (alloc.allocationType === 'percent') {
+              const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === alloc.incomeSourceId);
+              const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+              const expectedSourceAmount = mappedSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
+              const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+              allocated += base * alloc.allocationValue / 100;
+              console.log(`Category ${category.name}: actualSourceTotal=${actualSourceTotal}, expectedSourceAmount=${expectedSourceAmount}, base=${base}, percent=${alloc.allocationValue}, allocated+=${base * alloc.allocationValue / 100}`);
+            }
+          });
+        } else {
+          // Legacy support
+          if (category.allocationAmount) {
+            allocated = category.allocationAmount;
+          } else if (category.linkedSourceId && category.allocationPercent) {
+            const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === category.linkedSourceId);
+            const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+            const expectedSourceAmount = mappedSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
+            const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+            allocated = base * category.allocationPercent / 100;
+          }
+        }
+
+        const spent = (previousExpensesData || [])
+          .filter(exp => exp.category_id === category.id)
+          .reduce((sum, exp) => sum + Number(exp.amount), 0);
+
+        // If overspent, save the debt
+        if (spent > allocated) {
+          debts[category.id] = spent - allocated;
+          console.log(`Category ${category.name} has debt: spent=${spent}, allocated=${allocated}, debt=${spent - allocated}`);
+        }
+      });
+
+      setCategoryDebts(debts);
+      console.log('Category debts from previous month:', debts);
     } catch (error: any) {
       toast({
         title: "Ошибка загрузки",
@@ -465,11 +531,16 @@ const Dashboard = () => {
         }
       }
       const spent = expenses.filter(exp => exp.category_id === category.id).reduce((sum, exp) => sum + Number(exp.amount), 0);
+      
+      // Get debt from previous month
+      const debt = categoryDebts[category.id] || 0;
+      
       return {
         categoryId: category.id,
         allocated,
-        spent,
-        remaining: allocated - spent
+        spent, // Current month spending only
+        remaining: allocated - spent - debt, // Subtract debt from remaining budget
+        debt // Debt from previous month
       };
     });
   };
@@ -502,7 +573,7 @@ const Dashboard = () => {
   
   const categoryBudgets = useMemo(
     () => calculateCategoryBudgets(),
-    [categories, incomes, expenses, incomeSources]
+    [categories, incomes, expenses, incomeSources, categoryDebts]
   );
   
   const monthName = useMemo(

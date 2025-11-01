@@ -53,6 +53,7 @@ export interface CategoryBudget {
   allocated: number;
   spent: number;
   remaining: number;
+  debt?: number; // Debt from previous month
 }
 
 export interface SourceSummary {

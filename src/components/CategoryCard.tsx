@@ -137,6 +137,13 @@ export function CategoryCard({
               <span className="font-semibold">{formatAmount(budget.spent)}</span>
               <span className="text-muted-foreground">из {formatAmount(budget.allocated)}</span>
             </div>
+            
+            {/* Задолженность из предыдущего месяца */}
+            {budget.debt && budget.debt > 0 && (
+              <div className="text-[10px] text-orange-600 dark:text-orange-400 font-medium mt-0.5">
+                Долг: {formatAmount(budget.debt)}
+              </div>
+            )}
           </div>
           
           {/* Процент */}
@@ -251,6 +258,15 @@ export function CategoryCard({
             <span className="font-semibold">{formatAmount(budget.allocated)}</span>
           </div>
         </div>
+
+        {/* Задолженность из предыдущего месяца */}
+        {budget.debt && budget.debt > 0 ? (
+          <div className="text-center py-1 px-2 bg-orange-500/10 rounded border border-orange-500/20">
+            <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+              Долг с прошлого месяца: {formatAmount(budget.debt)}
+            </span>
+          </div>
+        ) : null}
 
         {/* Остаток или превышение */}
         {!isOverBudget && remaining > 0 ? (

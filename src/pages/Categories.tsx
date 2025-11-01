@@ -31,6 +31,7 @@ const Categories = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [expenses, setExpenses] = useState<Array<{ category_id: string; amount: number }>>([]);
+  const [categoryDebts, setCategoryDebts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<"name" | "spent" | "remaining">("name");
 
@@ -127,6 +128,66 @@ const Categories = () => {
         };
       });
       setCategories(mappedCategories);
+
+      // Calculate category debts from previous month
+      const previousMonthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1).toISOString();
+      const previousMonthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 0, 23, 59, 59).toISOString();
+
+      const {
+        data: previousIncomesData,
+        error: previousIncomesError
+      } = await supabase.from('incomes').select('source_id, amount').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      if (previousIncomesError) throw previousIncomesError;
+
+      const {
+        data: previousExpensesData,
+        error: previousExpensesError
+      } = await supabase.from('expenses').select('category_id, amount').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      if (previousExpensesError) throw previousExpensesError;
+
+      // Calculate debts for each category from previous month
+      const debts: Record<string, number> = {};
+      mappedCategories.forEach(category => {
+        let allocated = 0;
+        
+        if (category.allocations && category.allocations.length > 0) {
+          category.allocations.forEach(alloc => {
+            if (alloc.allocationType === 'amount') {
+              allocated += alloc.allocationValue;
+            } else if (alloc.allocationType === 'percent') {
+              const source = mappedSources.find(s => s.id === alloc.incomeSourceId);
+              const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === alloc.incomeSourceId);
+              const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+              const expectedSourceAmount = source?.amount || 0;
+              const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+              allocated += base * alloc.allocationValue / 100;
+            }
+          });
+        } else {
+          // Legacy support
+          if (category.allocationAmount) {
+            allocated = category.allocationAmount;
+          } else if (category.linkedSourceId && category.allocationPercent) {
+            const source = mappedSources.find(s => s.id === category.linkedSourceId);
+            const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === category.linkedSourceId);
+            const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+            const expectedSourceAmount = source?.amount || 0;
+            const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+            allocated = base * category.allocationPercent / 100;
+          }
+        }
+
+        const spent = (previousExpensesData || [])
+          .filter(exp => exp.category_id === category.id)
+          .reduce((sum, exp) => sum + Number(exp.amount), 0);
+
+        // If overspent, save the debt
+        if (spent > allocated) {
+          debts[category.id] = spent - allocated;
+        }
+      });
+
+      setCategoryDebts(debts);
     } catch (error: any) {
       toast({
         title: "Ошибка загрузки",
@@ -285,11 +346,15 @@ const Categories = () => {
       .filter(expense => expense.category_id === category.id)
       .reduce((sum, expense) => sum + Number(expense.amount), 0);
 
+    // Get debt from previous month
+    const debt = categoryDebts[category.id] || 0;
+
     return {
       categoryId: category.id,
       allocated,
-      spent,
-      remaining: allocated - spent,
+      spent, // Current month spending only
+      remaining: allocated - spent - debt, // Subtract debt from remaining budget
+      debt // Debt from previous month
     };
   };
 
