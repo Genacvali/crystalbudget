@@ -1,4 +1,4 @@
-import { Pencil, Trash2, AlertCircle, TrendingUp, Plus } from "lucide-react";
+npm installimport { Pencil, Trash2, AlertCircle, TrendingUp, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +44,7 @@ export function CategoryCard({
   const status = getStatus();
 
   // Если бюджет не настроен
-  if (!category.allocations || category.allocations.length === 0 || budget.allocated === 0) {
+  if (!category.allocations || category.allocations.length === 0) {
     if (compact) {
       return (
         <div className="group relative bg-card rounded-lg border p-3 hover:shadow-md transition-all hover:border-primary/50 flex items-center gap-3">
