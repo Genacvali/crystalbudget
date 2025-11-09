@@ -50,8 +50,9 @@ export function useNotifications() {
       const unread = data?.filter(n => !n.read_at).length || 0;
       setStats({ total, unread });
 
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';
+      setError(errorMessage);
       console.error('Error fetching notifications:', err);
     } finally {
       setLoading(false);
@@ -86,7 +87,7 @@ export function useNotifications() {
         unread: Math.max(0, prev.unread - 1)
       }));
 
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error marking notification as read:', err);
     }
   }, [user]);
@@ -112,7 +113,7 @@ export function useNotifications() {
       // Update stats
       setStats(prev => ({ ...prev, unread: 0 }));
 
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error marking all notifications as read:', err);
     }
   }, [user]);
@@ -140,7 +141,7 @@ export function useNotifications() {
         unread: deletedNotification?.read_at ? prev.unread : Math.max(0, prev.unread - 1)
       }));
 
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error deleting notification:', err);
     }
   }, [user, notifications]);
@@ -178,7 +179,7 @@ export function useNotifications() {
 
       return newNotification;
 
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error creating notification:', err);
       throw err;
     }

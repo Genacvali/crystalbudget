@@ -31,15 +31,17 @@ const Categories = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [expenses, setExpenses] = useState<Array<{ category_id: string; amount: number }>>([]);
-  const [categoryDebts, setCategoryDebts] = useState<Record<string, number>>({});
-  const [categoryCarryOvers, setCategoryCarryOvers] = useState<Record<string, number>>({});
+  const [incomes, setIncomes] = useState<Array<{ source_id: string; amount: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<"name" | "spent" | "remaining">("name");
+  const [categoryDebts, setCategoryDebts] = useState<Record<string, number>>({});
+  const [categoryCarryOvers, setCategoryCarryOvers] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (user) {
       loadData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedDate]);
 
   const loadData = async () => {
@@ -62,6 +64,7 @@ const Categories = () => {
         .lte('date', endOfMonth);
       
       if (incomesError) throw incomesError;
+      setIncomes(incomesData || []);
 
       // Calculate total income per source
       const sourceAmounts = (incomesData || []).reduce((acc, income) => {
@@ -71,6 +74,17 @@ const Categories = () => {
         return acc;
       }, {} as Record<string, number>);
 
+      // Create sources with expected amounts (for carry-over calculation)
+      const sourcesWithExpectedAmounts: IncomeSource[] = (sourcesData || []).map(item => ({
+        id: item.id,
+        name: item.name,
+        color: item.color,
+        amount: item.amount ? Number(item.amount) : undefined,
+        frequency: item.frequency || undefined,
+        receivedDate: item.received_date || undefined,
+      }));
+
+      // Create sources with actual amounts from current month (for display)
       const mappedSources: IncomeSource[] = (sourcesData || []).map(item => ({
         id: item.id,
         name: item.name,
@@ -130,20 +144,20 @@ const Categories = () => {
       });
       setCategories(mappedCategories);
 
-      // Calculate category debts from previous month
+      // Calculate category debts and carry-overs from previous month
       const previousMonthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1).toISOString();
       const previousMonthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 0, 23, 59, 59).toISOString();
 
       const {
         data: previousIncomesData,
         error: previousIncomesError
-      } = await supabase.from('incomes').select('source_id, amount').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      } = await supabase.from('incomes').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousIncomesError) throw previousIncomesError;
 
       const {
         data: previousExpensesData,
         error: previousExpensesError
-      } = await supabase.from('expenses').select('category_id, amount').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      } = await supabase.from('expenses').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousExpensesError) throw previousExpensesError;
 
       // Calculate debts and carry-overs for each category from previous month
@@ -158,10 +172,9 @@ const Categories = () => {
             if (alloc.allocationType === 'amount') {
               allocated += alloc.allocationValue;
             } else if (alloc.allocationType === 'percent') {
-              const source = mappedSources.find(s => s.id === alloc.incomeSourceId);
               const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === alloc.incomeSourceId);
               const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
-              const expectedSourceAmount = source?.amount || 0;
+              const expectedSourceAmount = sourcesWithExpectedAmounts.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
               const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
               allocated += base * alloc.allocationValue / 100;
             }
@@ -171,10 +184,9 @@ const Categories = () => {
           if (category.allocationAmount) {
             allocated = category.allocationAmount;
           } else if (category.linkedSourceId && category.allocationPercent) {
-            const source = mappedSources.find(s => s.id === category.linkedSourceId);
             const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === category.linkedSourceId);
             const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
-            const expectedSourceAmount = source?.amount || 0;
+            const expectedSourceAmount = sourcesWithExpectedAmounts.find(s => s.id === category.linkedSourceId)?.amount || 0;
             const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
             allocated = base * category.allocationPercent / 100;
           }
@@ -198,10 +210,13 @@ const Categories = () => {
 
       setCategoryDebts(debts);
       setCategoryCarryOvers(carryOvers);
-    } catch (error: any) {
+      console.log('Categories page - Category debts from previous month:', debts);
+      console.log('Categories page - Category carry-overs from previous month:', carryOvers);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка загрузки",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -282,10 +297,11 @@ const Categories = () => {
       });
 
       await loadData();
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -313,10 +329,11 @@ const Categories = () => {
       });
 
       await loadData();
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка удаления",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -331,23 +348,27 @@ const Categories = () => {
     if (category.allocations && category.allocations.length > 0) {
       // Calculate total from all allocations
       category.allocations.forEach(alloc => {
-        const source = incomeSources.find(s => s.id === alloc.incomeSourceId);
-        
         if (alloc.allocationType === 'amount') {
           allocated += alloc.allocationValue;
-        } else if (alloc.allocationType === 'percent' && source?.amount) {
-          allocated += (source.amount * alloc.allocationValue) / 100;
+        } else if (alloc.allocationType === 'percent') {
+          // Use actual source income if present, else fall back to expected source amount
+          const sourceIncomes = incomes.filter(inc => inc.source_id === alloc.incomeSourceId);
+          const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+          const expectedSourceAmount = incomeSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
+          const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+          allocated += base * alloc.allocationValue / 100;
         }
       });
     } else {
       // Legacy support
       if (category.allocationAmount) {
         allocated = category.allocationAmount;
-      } else if (category.allocationPercent && category.linkedSourceId) {
-        const source = incomeSources.find(s => s.id === category.linkedSourceId);
-        if (source?.amount) {
-          allocated = (source.amount * category.allocationPercent) / 100;
-        }
+      } else if (category.linkedSourceId && category.allocationPercent) {
+        const sourceIncomes = incomes.filter(inc => inc.source_id === category.linkedSourceId);
+        const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+        const expectedSourceAmount = incomeSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
+        const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+        allocated = base * category.allocationPercent / 100;
       }
     }
 
@@ -362,7 +383,7 @@ const Categories = () => {
     
     // Add carry-over to allocated budget
     const totalAllocated = allocated + carryOver;
-
+    
     return {
       categoryId: category.id,
       allocated: totalAllocated, // Include carry-over in allocated

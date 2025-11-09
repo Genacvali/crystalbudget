@@ -64,7 +64,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
     }
   }, [open, hasGreeted, messages.length]);
 
-  const handleToolCalls = async (toolCalls: any[]) => {
+  const handleToolCalls = async (toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>) => {
     if (!user || !effectiveUserId) return;
 
     for (const toolCall of toolCalls) {
@@ -94,7 +94,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .maybeSingle();
 
             if (category) {
-              const updateData: any = {};
+              const updateData: Record<string, unknown> = {};
               if (args.allocation_percent !== undefined) {
                 updateData.allocation_percent = args.allocation_percent;
               }
@@ -191,7 +191,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .maybeSingle();
 
             if (category) {
-              const updateData: any = {};
+              const updateData: Record<string, unknown> = {};
               if (args.new_name) updateData.name = args.new_name;
               if (args.icon) updateData.icon = args.icon;
 
@@ -251,7 +251,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .maybeSingle();
 
             if (source) {
-              const updateData: any = {};
+              const updateData: Record<string, unknown> = {};
               if (args.new_name) updateData.name = args.new_name;
               if (args.amount !== undefined) updateData.amount = args.amount;
 
@@ -321,7 +321,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             const { data: expense } = await query.maybeSingle();
 
             if (expense) {
-              const updateData: any = {};
+              const updateData: Record<string, unknown> = {};
               if (args.new_amount !== undefined) updateData.amount = args.new_amount;
               if (args.new_description) updateData.description = args.new_description;
               
@@ -414,7 +414,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
             const { data: income } = await query.maybeSingle();
 
             if (income) {
-              const updateData: any = {};
+              const updateData: Record<string, unknown> = {};
               if (args.new_amount !== undefined) updateData.amount = args.new_amount;
               if (args.new_description) updateData.description = args.new_description;
               
@@ -609,7 +609,7 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
       let textBuffer = "";
       let streamDone = false;
       let assistantContent = "";
-      let toolCalls: any[] = [];
+      let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
 
       while (!streamDone) {
         const { done, value } = await reader.read();

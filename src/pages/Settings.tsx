@@ -39,6 +39,7 @@ const Settings = () => {
       loadFamily();
       loadTelegramConnection();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadProfile = async () => {
@@ -117,7 +118,7 @@ const Settings = () => {
       .eq("id", familyId)
       .single();
 
-    const allMembers: any[] = [];
+    const allMembers: Array<{ id: string; email: string; full_name: string; role: string; avatar_url?: string }> = [];
 
     // Add owner to the list
     if (familyData?.owner_id) {
@@ -482,11 +483,12 @@ const Settings = () => {
         title: "Данные экспортированы",
         description: "Файл сохранен в папку загрузок",
       });
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         variant: "destructive",
         title: "Ошибка экспорта",
-        description: error.message,
+        description: errorMessage,
       });
     }
     setLoading(false);
@@ -514,11 +516,12 @@ const Settings = () => {
         title: "Данные очищены",
         description: "Все ваши финансовые данные удалены",
       });
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         variant: "destructive",
         title: "Ошибка очистки",
-        description: error.message,
+        description: errorMessage,
       });
     }
     setLoading(false);
@@ -634,11 +637,12 @@ const Settings = () => {
       } else {
         throw new Error(data.error || 'Неизвестная ошибка');
       }
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         variant: "destructive",
         title: "Ошибка установки webhook",
-        description: error.message,
+        description: errorMessage,
       });
     }
     setSettingWebhook(false);

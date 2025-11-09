@@ -40,8 +40,8 @@ const Dashboard = () => {
   const { createNotification } = useNotifications();
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [incomes, setIncomes] = useState<any[]>([]);
-  const [expenses, setExpenses] = useState<any[]>([]);
+  const [incomes, setIncomes] = useState<Array<{ id: string; source_id: string; amount: number; date: string; description?: string }>>([]);
+  const [expenses, setExpenses] = useState<Array<{ id: string; category_id: string; amount: number; date: string; description?: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -61,6 +61,7 @@ const Dashboard = () => {
     if (user) {
       loadData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedDate]);
 
   // Save compact view preference
@@ -247,10 +248,11 @@ const Dashboard = () => {
       setCategoryCarryOvers(carryOvers);
       console.log('Category debts from previous month:', debts);
       console.log('Category carry-overs from previous month:', carryOvers);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка загрузки",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -320,12 +322,13 @@ const Dashboard = () => {
         console.error('Failed to create notification:', notificationError);
         // Don't fail the whole operation if notification fails
       }
-    } catch (error: any) {
+    } catch (error) {
       // Rollback on error
       setIncomes(prev => prev.filter(i => i.id !== tempIncome.id));
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive"
       });
     }
@@ -393,12 +396,13 @@ const Dashboard = () => {
         console.error('Failed to create notification:', notificationError);
         // Don't fail the whole operation if notification fails
       }
-    } catch (error: any) {
+    } catch (error) {
       // Rollback on error
       setExpenses(prev => prev.filter(e => e.id !== tempExpense.id));
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive"
       });
     }
@@ -584,11 +588,13 @@ const Dashboard = () => {
   
   const sourceSummaries = useMemo(
     () => calculateSourceSummaries(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [incomeSources, incomes, expenses, categories]
   );
   
   const categoryBudgets = useMemo(
     () => calculateCategoryBudgets(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [categories, incomes, expenses, incomeSources, categoryDebts, categoryCarryOvers]
   );
   

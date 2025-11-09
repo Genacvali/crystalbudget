@@ -76,10 +76,11 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         description: `${sourceName} успешно добавлен`,
       });
       setStep(3);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -115,10 +116,11 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         description: `${incomeAmount} добавлено к источнику`,
       });
       setStep(4);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -177,10 +179,11 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         description: `Создано ${selectedCategories.size} категорий`,
       });
       setStep(5);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -237,10 +240,11 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         description: "Категории успешно связаны с источником дохода",
       });
       setStep(6);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

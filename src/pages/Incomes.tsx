@@ -35,6 +35,7 @@ const Incomes = () => {
     if (user) {
       loadIncomeSources();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadIncomeSources = async () => {
@@ -56,10 +57,11 @@ const Incomes = () => {
       }));
 
       setSources(mappedSources);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка загрузки",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -122,10 +124,11 @@ const Incomes = () => {
       }
 
       await loadIncomeSources();
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -153,10 +156,11 @@ const Incomes = () => {
       });
 
       await loadIncomeSources();
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка удаления",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

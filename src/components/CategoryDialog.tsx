@@ -64,7 +64,7 @@ export function CategoryDialog({
     setAllocations(allocations.filter((_, i) => i !== index));
   };
 
-  const handleAllocationChange = (index: number, field: keyof CategoryAllocation, value: any) => {
+  const handleAllocationChange = (index: number, field: keyof CategoryAllocation, value: string | number) => {
     const newAllocations = [...allocations];
     newAllocations[index] = { ...newAllocations[index], [field]: value };
     setAllocations(newAllocations);

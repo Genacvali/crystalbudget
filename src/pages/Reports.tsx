@@ -44,6 +44,7 @@ const Reports = () => {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
   const loadData = async () => {
@@ -95,8 +96,8 @@ const Reports = () => {
     const categoryMap = new Map<string, { name: string; value: number; icon: string }>();
     
     if (expensesData && expensesData.length > 0 && categoriesData) {
-      expensesData.forEach((expense: any) => {
-        const category = categoriesData.find((cat: any) => cat.id === expense.category_id);
+      expensesData.forEach((expense) => {
+        const category = categoriesData.find((cat) => cat.id === expense.category_id);
         const categoryName = category?.name || "Без категории";
         const categoryIcon = category?.icon || "📦";
         const existing = categoryMap.get(categoryName);
@@ -128,7 +129,7 @@ const Reports = () => {
     const dailyMap = new Map<string, number>();
     
     if (expensesData && expensesData.length > 0) {
-      expensesData.forEach((expense: any) => {
+      expensesData.forEach((expense) => {
         const day = format(new Date(expense.date), 'dd.MM');
         const existing = dailyMap.get(day);
         if (existing) {
@@ -295,7 +296,7 @@ const Reports = () => {
                           verticalAlign="middle" 
                           align="right"
                           wrapperStyle={{ fontSize: '12px', paddingLeft: '20px' }}
-                          formatter={(value, entry: any) => {
+                          formatter={(value, entry) => {
                             const percent = ((entry.payload.value / categoryExpenses.reduce((sum, cat) => sum + cat.value, 0)) * 100).toFixed(0);
                             return `${value} (${percent}%)`;
                           }}

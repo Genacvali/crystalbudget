@@ -44,6 +44,7 @@ export function SubscriptionManager() {
     if (user) {
       loadSubscription();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadSubscription = async () => {
@@ -58,7 +59,7 @@ export function SubscriptionManager() {
 
       if (error) throw error;
       setSubscription(data);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error loading subscription:', error);
     } finally {
       setLoading(false);
@@ -70,7 +71,7 @@ export function SubscriptionManager() {
 
     try {
       const now = new Date();
-      let expiresAt = new Date();
+      const expiresAt = new Date();
 
       switch (plan.type) {
         case 'monthly':
@@ -101,10 +102,11 @@ export function SubscriptionManager() {
       });
 
       loadSubscription();
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive"
       });
     }
