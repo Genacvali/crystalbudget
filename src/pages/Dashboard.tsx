@@ -650,7 +650,7 @@ const Dashboard = () => {
           <SummaryCard 
             title="Общий баланс" 
             value={formatAmount(totalBalance)} 
-            subtitle={carryOverBalance !== 0 ? `${formatAmount(monthBalance)} + ${formatAmount(carryOverBalance)} остаток` : `Только за ${monthName}`} 
+            subtitle={carryOverBalance !== 0 ? `${formatAmount(monthBalance)} ${carryOverBalance >= 0 ? '+' : '-'} ${formatAmount(Math.abs(carryOverBalance))} остаток` : `Только за ${monthName}`} 
             icon={PiggyBank} 
             variant={totalBalance > 0 ? "success" : totalBalance < 0 ? "destructive" : "default"} 
           />
