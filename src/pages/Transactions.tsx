@@ -321,6 +321,70 @@ const Transactions = () => {
     }
   });
 
+  // Группировка транзакций по датам
+  interface GroupedTransactions {
+    date: string;
+    dateLabel: string;
+    relativeLabel: string;
+    transactions: Transaction[];
+    totalIncome: number;
+    totalExpense: number;
+    netAmount: number;
+  }
+
+  const groupTransactionsByDate = (transactions: Transaction[]): GroupedTransactions[] => {
+    const grouped = new Map<string, Transaction[]>();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    transactions.forEach(transaction => {
+      const date = new Date(transaction.date);
+      const dateKey = format(date, 'yyyy-MM-dd');
+      
+      if (!grouped.has(dateKey)) {
+        grouped.set(dateKey, []);
+      }
+      grouped.get(dateKey)!.push(transaction);
+    });
+
+    return Array.from(grouped.entries()).map(([dateKey, transactions]) => {
+      const date = new Date(dateKey);
+      const totalIncome = transactions
+        .filter(t => t.type === 'income')
+        .reduce((sum, t) => sum + t.amount, 0);
+      const totalExpense = transactions
+        .filter(t => t.type === 'expense')
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      // Определяем относительную метку
+      let relativeLabel = '';
+      const dateWithoutTime = new Date(date);
+      dateWithoutTime.setHours(0, 0, 0, 0);
+      
+      if (dateWithoutTime.getTime() === today.getTime()) {
+        relativeLabel = 'Сегодня';
+      } else if (dateWithoutTime.getTime() === yesterday.getTime()) {
+        relativeLabel = 'Вчера';
+      }
+
+      return {
+        date: dateKey,
+        dateLabel: format(date, 'd MMMM yyyy', { locale: ru }),
+        relativeLabel,
+        transactions: transactions.sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
+        totalIncome,
+        totalExpense,
+        netAmount: totalIncome - totalExpense
+      };
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  };
+
+  const groupedByDate = groupTransactionsByDate(sortedTransactions);
+
   return (
     <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
       <div className="space-y-4 sm:space-y-6">
@@ -404,7 +468,7 @@ const Transactions = () => {
           </Select>
         </div>
 
-        <div className="space-y-2 sm:space-y-3">
+        <div className="space-y-4 sm:space-y-6">
           {sortedTransactions.length === 0 ? (
             <Card>
               <CardContent className="p-6 sm:p-8 text-center">
@@ -412,7 +476,41 @@ const Transactions = () => {
               </CardContent>
             </Card>
           ) : (
-            sortedTransactions.map((transaction) => (
+            groupedByDate.map((group) => (
+              <div key={group.date} className="space-y-2 sm:space-y-3">
+                {/* Заголовок даты с суммами */}
+                <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-1 py-2 border-b">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-base sm:text-lg">
+                        {group.relativeLabel && (
+                          <span className="text-primary">{group.relativeLabel} • </span>
+                        )}
+                        {group.dateLabel}
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      {group.totalIncome > 0 && (
+                        <Badge variant="outline" className="bg-success/10 text-success border-success/20">
+                          <ArrowUpRight className="h-3 w-3 mr-1" />
+                          +{formatAmount(group.totalIncome)}
+                        </Badge>
+                      )}
+                      {group.totalExpense > 0 && (
+                        <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">
+                          <ArrowDownRight className="h-3 w-3 mr-1" />
+                          -{formatAmount(group.totalExpense)}
+                        </Badge>
+                      )}
+                      <Badge variant={group.netAmount >= 0 ? "default" : "destructive"} className="hidden sm:flex">
+                        {group.netAmount >= 0 ? '+' : ''}{formatAmount(group.netAmount)}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Транзакции этого дня */}
+                {group.transactions.map((transaction) => (
               <Card key={transaction.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -478,6 +576,8 @@ const Transactions = () => {
                   </div>
                 </CardContent>
               </Card>
+                ))}
+              </div>
             ))
           )}
         </div>

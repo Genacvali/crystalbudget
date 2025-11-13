@@ -56,7 +56,9 @@ serve(async (req) => {
       userId = user.id;
     }
 
-    // Check if user has active subscription
+    // Check if user has active subscription (TEMPORARILY DISABLED FOR TESTING)
+    // TODO: Enable subscription check when ready
+    /*
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('*')
@@ -77,6 +79,8 @@ serve(async (req) => {
         }
       );
     }
+    */
+    console.log('Subscription check disabled for user:', userId);
 
     // Extract data from request
     const { imageUrl, categories } = requestData;

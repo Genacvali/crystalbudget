@@ -94,13 +94,32 @@ const Dashboard = () => {
       const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1).toISOString();
       const endOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-      // Calculate carry-over balance from all previous months
+      // Get family members to include their transactions
+      let familyUserIds = [user!.id];
+      const { data: family } = await supabase
+        .from('families')
+        .select('id')
+        .eq('owner_id', user!.id)
+        .maybeSingle();
+      
+      if (family?.id) {
+        const { data: members } = await supabase
+          .from('family_members')
+          .select('user_id')
+          .eq('family_id', family.id);
+        
+        if (members && members.length > 0) {
+          familyUserIds = [user!.id, ...members.map(m => m.user_id)];
+        }
+      }
+
+      // Calculate carry-over balance from all previous months (family scope)
       const {
         data: previousIncomes
-      } = await supabase.from('incomes').select('amount').lt('date', startOfMonth);
+      } = await supabase.from('incomes').select('amount').in('user_id', familyUserIds).lt('date', startOfMonth);
       const {
         data: previousExpenses
-      } = await supabase.from('expenses').select('amount').lt('date', startOfMonth);
+      } = await supabase.from('expenses').select('amount').in('user_id', familyUserIds).lt('date', startOfMonth);
       const previousTotalIncome = (previousIncomes || []).reduce((sum, inc) => sum + Number(inc.amount), 0);
       const previousTotalExpenses = (previousExpenses || []).reduce((sum, exp) => sum + Number(exp.amount), 0);
       const calculatedCarryOver = previousTotalIncome - previousTotalExpenses;
@@ -158,19 +177,19 @@ const Dashboard = () => {
       });
       setCategories(mappedCategories);
 
-      // Load incomes for selected month
+      // Load incomes for selected month (family scope)
       const {
         data: incomesData,
         error: incomesError
-      } = await supabase.from('incomes').select('*').gte('date', startOfMonth).lte('date', endOfMonth);
+      } = await supabase.from('incomes').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
       if (incomesError) throw incomesError;
       setIncomes(incomesData || []);
 
-      // Load expenses for selected month
+      // Load expenses for selected month (family scope)
       const {
         data: expensesData,
         error: expensesError
-      } = await supabase.from('expenses').select('*').gte('date', startOfMonth).lte('date', endOfMonth);
+      } = await supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
       if (expensesError) throw expensesError;
       setExpenses(expensesData || []);
 
@@ -181,13 +200,13 @@ const Dashboard = () => {
       const {
         data: previousIncomesData,
         error: previousIncomesError
-      } = await supabase.from('incomes').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      } = await supabase.from('incomes').select('*').in('user_id', familyUserIds).gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousIncomesError) throw previousIncomesError;
 
       const {
         data: previousExpensesData,
         error: previousExpensesError
-      } = await supabase.from('expenses').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      } = await supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousExpensesError) throw previousExpensesError;
 
       // Calculate debts and carry-overs for each category from previous month
