@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { z } from "zod";
 import crystalIcon from "@/assets/crystal-icon.png";
+import { TelegramLoginButton } from "@/components/TelegramLoginButton";
 const emailSchema = z.string().email("Неверный формат email");
 const passwordSchema = z.string().min(6, "Пароль должен содержать минимум 6 символов");
 const Auth = () => {
@@ -37,6 +38,14 @@ const Auth = () => {
       setUpdatePasswordMode(true);
       return;
     }
+    
+    // Check if user is coming from Telegram auth
+    const telegramToken = hashParams.get('telegram_token');
+    if (telegramToken) {
+      handleTelegramAuth(telegramToken);
+      return;
+    }
+    
     supabase.auth.getSession().then(({
       data: {
         session
@@ -135,6 +144,41 @@ const Auth = () => {
     }
     setLoading(false);
   };
+  const handleTelegramAuth = async (telegramUser: any) => {
+    setLoading(true);
+    try {
+      // Call Supabase Edge Function to verify and authenticate
+      const { data, error } = await supabase.functions.invoke('telegram-auth', {
+        body: { telegramUser }
+      });
+
+      if (error) throw error;
+
+      if (data?.session) {
+        // Set session
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+        
+        toast({
+          title: "Успешный вход",
+          description: "Вы вошли через Telegram"
+        });
+        navigate("/");
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка авторизации через Telegram';
+      toast({
+        title: "Ошибка",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -315,15 +359,12 @@ const Auth = () => {
                   </div>
                 </div>
                 
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full bg-[#0088cc] hover:bg-[#0088cc]/90 text-white border-[#0088cc]"
-                  onClick={() => window.open('https://t.me/CrystalBudget_bot?start=auth', '_blank')}
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  Войти через Telegram
-                </Button>
+                <TelegramLoginButton
+                  botName="CrystalBudget_bot"
+                  onAuth={handleTelegramAuth}
+                  buttonSize="large"
+                  cornerRadius={8}
+                />
                 
                 <Button type="button" variant="link" className="w-full" onClick={() => setResetMode(true)}>
                   Забыли пароль?
@@ -361,15 +402,12 @@ const Auth = () => {
                   </div>
                 </div>
                 
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full bg-[#0088cc] hover:bg-[#0088cc]/90 text-white border-[#0088cc]"
-                  onClick={() => window.open('https://t.me/CrystalBudget_bot?start=auth', '_blank')}
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  Начать в Telegram
-                </Button>
+                <TelegramLoginButton
+                  botName="CrystalBudget_bot"
+                  onAuth={handleTelegramAuth}
+                  buttonSize="large"
+                  cornerRadius={8}
+                />
               </form>
             </TabsContent>
           </Tabs>
