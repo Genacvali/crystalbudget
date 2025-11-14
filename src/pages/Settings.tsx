@@ -684,7 +684,10 @@ const Settings = () => {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" value={user?.email || ""} disabled />
+              <Input id="email" value={user?.email || ""} disabled className="bg-muted" />
+              <p className="text-xs text-muted-foreground font-mono">
+                User ID: {user?.id}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="fullName">Имя</Label>
