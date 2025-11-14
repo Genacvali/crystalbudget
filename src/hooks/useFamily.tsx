@@ -33,13 +33,25 @@ export function useFamily() {
         // Check if user is a family member
         const { data: membership } = await supabase
           .from('family_members')
-          .select('family_id, families!inner(owner_id)')
+          .select('family_id')
           .eq('user_id', user.id)
           .maybeSingle();
 
-        if (membership && membership.families) {
-          // User is a family member, use family owner's ID
-          setEffectiveUserId((membership.families as any).owner_id);
+        if (membership?.family_id) {
+          // Get family owner ID
+          const { data: familyData } = await supabase
+            .from('families')
+            .select('owner_id')
+            .eq('id', membership.family_id)
+            .single();
+
+          if (familyData?.owner_id) {
+            // User is a family member, use family owner's ID
+            setEffectiveUserId(familyData.owner_id);
+          } else {
+            // Family not found or no owner, use own ID
+            setEffectiveUserId(user.id);
+          }
         } else {
           // User is not in a family, use their own ID
           setEffectiveUserId(user.id);
