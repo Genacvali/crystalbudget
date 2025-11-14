@@ -804,18 +804,51 @@ async function handleBalance(chatId, userId) {
   
   // Resolve family scope: owner + members; if no family — only owner
   let familyUserIds = [effectiveUserId];
-  const { data: family } = await supabase
+  
+  // Check if user is a family owner
+  const { data: ownedFamily } = await supabase
     .from('families')
     .select('id')
     .eq('owner_id', effectiveUserId)
     .maybeSingle();
-  if (family?.id) {
+  
+  let familyId: string | null = null;
+  
+  if (ownedFamily?.id) {
+    familyId = ownedFamily.id;
+  } else {
+    // Check if user is a family member
+    const { data: membership } = await supabase
+      .from('family_members')
+      .select('family_id')
+      .eq('user_id', effectiveUserId)
+      .maybeSingle();
+    
+    if (membership?.family_id) {
+      familyId = membership.family_id;
+    }
+  }
+  
+  if (familyId) {
+    // Get family owner
+    const { data: familyData } = await supabase
+      .from('families')
+      .select('owner_id')
+      .eq('id', familyId)
+      .single();
+    
+    // Get all family members
     const { data: members } = await supabase
       .from('family_members')
       .select('user_id')
-      .eq('family_id', family.id);
-    if (members && members.length > 0) {
-      familyUserIds = [effectiveUserId, ...members.map(m => m.user_id)];
+      .eq('family_id', familyId);
+    
+    // Include owner and all members
+    if (familyData?.owner_id) {
+      familyUserIds = [familyData.owner_id];
+      if (members && members.length > 0) {
+        familyUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
+      }
     }
   }
 
@@ -1014,18 +1047,51 @@ async function handleHistory(chatId, userId) {
   
   // Resolve family scope: owner + members; if no family — only owner
   let familyUserIds = [effectiveUserId];
-  const { data: family } = await supabase
+  
+  // Check if user is a family owner
+  const { data: ownedFamily } = await supabase
     .from('families')
     .select('id')
     .eq('owner_id', effectiveUserId)
     .maybeSingle();
-  if (family?.id) {
+  
+  let familyId: string | null = null;
+  
+  if (ownedFamily?.id) {
+    familyId = ownedFamily.id;
+  } else {
+    // Check if user is a family member
+    const { data: membership } = await supabase
+      .from('family_members')
+      .select('family_id')
+      .eq('user_id', effectiveUserId)
+      .maybeSingle();
+    
+    if (membership?.family_id) {
+      familyId = membership.family_id;
+    }
+  }
+  
+  if (familyId) {
+    // Get family owner
+    const { data: familyData } = await supabase
+      .from('families')
+      .select('owner_id')
+      .eq('id', familyId)
+      .single();
+    
+    // Get all family members
     const { data: members } = await supabase
       .from('family_members')
       .select('user_id')
-      .eq('family_id', family.id);
-    if (members && members.length > 0) {
-      familyUserIds = [effectiveUserId, ...members.map(m => m.user_id)];
+      .eq('family_id', familyId);
+    
+    // Include owner and all members
+    if (familyData?.owner_id) {
+      familyUserIds = [familyData.owner_id];
+      if (members && members.length > 0) {
+        familyUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
+      }
     }
   }
   
@@ -1254,18 +1320,51 @@ async function checkBudgetLimits(userId, categoryId, amount) {
   
   // Resolve family scope for expenses
   let familyUserIds = [effectiveUserId];
-  const { data: family } = await supabase
+  
+  // Check if user is a family owner
+  const { data: ownedFamily } = await supabase
     .from('families')
     .select('id')
     .eq('owner_id', effectiveUserId)
     .maybeSingle();
-  if (family?.id) {
+  
+  let familyId: string | null = null;
+  
+  if (ownedFamily?.id) {
+    familyId = ownedFamily.id;
+  } else {
+    // Check if user is a family member
+    const { data: membership } = await supabase
+      .from('family_members')
+      .select('family_id')
+      .eq('user_id', effectiveUserId)
+      .maybeSingle();
+    
+    if (membership?.family_id) {
+      familyId = membership.family_id;
+    }
+  }
+  
+  if (familyId) {
+    // Get family owner
+    const { data: familyData } = await supabase
+      .from('families')
+      .select('owner_id')
+      .eq('id', familyId)
+      .single();
+    
+    // Get all family members
     const { data: members } = await supabase
       .from('family_members')
       .select('user_id')
-      .eq('family_id', family.id);
-    if (members && members.length > 0) {
-      familyUserIds = [effectiveUserId, ...members.map(m => m.user_id)];
+      .eq('family_id', familyId);
+    
+    // Include owner and all members
+    if (familyData?.owner_id) {
+      familyUserIds = [familyData.owner_id];
+      if (members && members.length > 0) {
+        familyUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
+      }
     }
   }
   

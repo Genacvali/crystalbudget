@@ -7,6 +7,7 @@ import { IncomeSourceDialog } from "@/components/IncomeSourceDialog";
 import { IncomeSource } from "@/types/budget";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useFamily } from "@/hooks/useFamily";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
@@ -23,6 +24,7 @@ const Incomes = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
   const { user } = useAuth();
+  const { effectiveUserId, loading: familyLoading } = useFamily();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<IncomeSource | undefined>();
@@ -32,17 +34,20 @@ const Incomes = () => {
 
   // Load income sources from database
   useEffect(() => {
-    if (user) {
+    if (user && effectiveUserId && !familyLoading) {
       loadIncomeSources();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, effectiveUserId, familyLoading]);
 
   const loadIncomeSources = async () => {
+    if (!effectiveUserId) return;
+    
     try {
       const { data, error } = await supabase
         .from('income_sources')
         .select('*')
+        .eq('user_id', effectiveUserId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

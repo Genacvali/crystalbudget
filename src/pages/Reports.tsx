@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { startOfMonth, endOfMonth, format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useAuth } from "@/hooks/useAuth";
 import { 
   PieChart, 
   Pie, 
@@ -41,13 +42,18 @@ const Reports = () => {
   const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>([]);
   const [dailyExpenses, setDailyExpenses] = useState<DailyExpense[]>([]);
   const { formatAmount } = useCurrency();
+  const { user } = useAuth();
 
   useEffect(() => {
-    loadData();
+    if (user) {
+      loadData();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
+  }, [selectedDate, user]);
 
   const loadData = async () => {
+    if (!user) return;
+    
     setLoading(true);
     
     const monthStart = startOfMonth(selectedDate);
@@ -55,10 +61,67 @@ const Reports = () => {
 
     console.log('Loading data for period:', monthStart, 'to', monthEnd);
 
-    // Загрузка доходов
+    // Get family members to include their transactions
+    let familyUserIds = [user.id];
+
+    // Check if user is a family owner
+    const { data: ownedFamily } = await supabase
+      .from('families')
+      .select('id')
+      .eq('owner_id', user.id)
+      .maybeSingle();
+
+    let familyId: string | null = null;
+
+    if (ownedFamily?.id) {
+      familyId = ownedFamily.id;
+    } else {
+      // Check if user is a family member
+      const { data: membership } = await supabase
+        .from('family_members')
+        .select('family_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (membership?.family_id) {
+        familyId = membership.family_id;
+      }
+    }
+
+    // Store effectiveUserId and familyData for reuse
+    let effectiveUserId = user.id;
+    let familyOwnerId: string | null = null;
+
+    if (familyId) {
+      // Get family owner
+      const { data: familyData } = await supabase
+        .from('families')
+        .select('owner_id')
+        .eq('id', familyId)
+        .single();
+
+      // Get all family members
+      const { data: members } = await supabase
+        .from('family_members')
+        .select('user_id')
+        .eq('family_id', familyId);
+
+      // Include owner and all members
+      if (familyData?.owner_id) {
+        familyOwnerId = familyData.owner_id;
+        effectiveUserId = familyOwnerId; // Use owner's ID for categories
+        familyUserIds = [familyOwnerId];
+        if (members && members.length > 0) {
+          familyUserIds = [familyOwnerId, ...members.map(m => m.user_id)];
+        }
+      }
+    }
+
+    // Загрузка доходов (family scope)
     const { data: incomesData, error: incomesError } = await supabase
       .from("incomes")
       .select("amount")
+      .in("user_id", familyUserIds)
       .gte("date", monthStart.toISOString())
       .lte("date", monthEnd.toISOString());
 
@@ -67,10 +130,11 @@ const Reports = () => {
     }
     console.log('Incomes data:', incomesData);
 
-    // Загрузка расходов
+    // Загрузка расходов (family scope)
     const { data: expensesData, error: expensesError } = await supabase
       .from("expenses")
       .select("amount, date, category_id")
+      .in("user_id", familyUserIds)
       .gte("date", monthStart.toISOString())
       .lte("date", monthEnd.toISOString());
 
@@ -79,10 +143,11 @@ const Reports = () => {
     }
     console.log('Expenses data:', expensesData);
 
-    // Загрузка категорий
+    // Загрузка категорий (effective user scope - already determined above)
     const { data: categoriesData } = await supabase
       .from("categories")
-      .select("id, name, icon");
+      .select("id, name, icon")
+      .eq("user_id", effectiveUserId);
     
     console.log('Categories data:', categoriesData);
 

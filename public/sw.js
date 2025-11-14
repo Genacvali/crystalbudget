@@ -1,4 +1,4 @@
-const CACHE_NAME = 'crystal-fin-buddy-v1060';
+const CACHE_NAME = 'crystal-fin-buddy-v1061';
 const urlsToCache = [
   '/',
   '/index.html',

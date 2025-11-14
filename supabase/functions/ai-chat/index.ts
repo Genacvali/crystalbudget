@@ -108,25 +108,53 @@ serve(async (req) => {
         let familyUserIds = [userId];
         console.log('👥 Starting family members check for user:', userId);
         
-        const { data: familyMember, error: familyMemberError } = await supabase
-          .from('family_members')
-          .select('family_id')
-          .eq('user_id', userId)
+        // Check if user is a family owner
+        const { data: ownedFamily } = await supabase
+          .from('families')
+          .select('id')
+          .eq('owner_id', userId)
           .maybeSingle();
+        
+        let familyId: string | null = null;
+        
+        if (ownedFamily?.id) {
+          familyId = ownedFamily.id;
+          console.log('👑 User is family owner, family_id:', familyId);
+        } else {
+          // Check if user is a family member
+          const { data: familyMember, error: familyMemberError } = await supabase
+            .from('family_members')
+            .select('family_id')
+            .eq('user_id', userId)
+            .maybeSingle();
 
-        if (familyMemberError) {
-          console.error('❌ Error checking family membership:', familyMemberError);
+          if (familyMemberError) {
+            console.error('❌ Error checking family membership:', familyMemberError);
+          }
+
+          console.log('👥 Family member check result:', { familyMember, familyMemberError });
+
+          if (familyMember?.family_id) {
+            familyId = familyMember.family_id;
+            console.log('👨‍👩‍👧‍👦 User is in family, family_id:', familyId);
+          } else {
+            console.log('👤 User is individual, using single user ID');
+          }
         }
-
-        console.log('👥 Family member check result:', { familyMember, familyMemberError });
-
-        if (familyMember) {
-          console.log('👨‍👩‍👧‍👦 User is in family, loading all members for family_id:', familyMember.family_id);
+        
+        if (familyId) {
+          // Get family owner
+          const { data: familyData } = await supabase
+            .from('families')
+            .select('owner_id')
+            .eq('id', familyId)
+            .single();
           
+          // Get all family members
           const { data: familyMembers, error: familyMembersError } = await supabase
             .from('family_members')
             .select('user_id')
-            .eq('family_id', familyMember.family_id);
+            .eq('family_id', familyId);
 
           if (familyMembersError) {
             console.error('❌ Error loading family members:', familyMembersError);
@@ -134,12 +162,14 @@ serve(async (req) => {
 
           console.log('👨‍👩‍👧‍👦 Family members loaded:', { familyMembers, familyMembersError });
 
-          if (familyMembers) {
-            familyUserIds = familyMembers.map(m => m.user_id);
+          // Include owner and all members
+          if (familyData?.owner_id) {
+            familyUserIds = [familyData.owner_id];
+            if (familyMembers && familyMembers.length > 0) {
+              familyUserIds = [familyData.owner_id, ...familyMembers.map(m => m.user_id)];
+            }
             console.log('✅ Family user IDs updated:', familyUserIds);
           }
-        } else {
-          console.log('👤 User is individual, using single user ID');
         }
 
         // First check if user has any data at all

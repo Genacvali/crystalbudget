@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useAuth } from "@/hooks/useAuth";
 import { IncomeDialog } from "@/components/IncomeDialog";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -84,12 +85,66 @@ const Transactions = () => {
     const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1).toISOString();
     const endOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
+    // Get family members to include their transactions
+    let familyUserIds = [user.id];
+
+    // Check if user is a family owner
+    const { data: ownedFamily } = await supabase
+      .from('families')
+      .select('id')
+      .eq('owner_id', user.id)
+      .maybeSingle();
+
+    let familyId: string | null = null;
+
+    if (ownedFamily?.id) {
+      familyId = ownedFamily.id;
+    } else {
+      // Check if user is a family member
+      const { data: membership } = await supabase
+        .from('family_members')
+        .select('family_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (membership?.family_id) {
+        familyId = membership.family_id;
+      }
+    }
+
+    // Store effectiveUserId for reuse
+    let effectiveUserId = user.id;
+
+    if (familyId) {
+      // Get family owner
+      const { data: familyData } = await supabase
+        .from('families')
+        .select('owner_id')
+        .eq('id', familyId)
+        .single();
+
+      // Get all family members
+      const { data: members } = await supabase
+        .from('family_members')
+        .select('user_id')
+        .eq('family_id', familyId);
+
+      // Include owner and all members
+      if (familyData?.owner_id) {
+        effectiveUserId = familyData.owner_id; // Use owner's ID for categories/sources
+        familyUserIds = [familyData.owner_id];
+        if (members && members.length > 0) {
+          familyUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
+        }
+      }
+    }
+
     const [incomesRes, expensesRes, sourcesRes, categoriesRes, profilesRes] = await Promise.all([
-      supabase.from("incomes").select("*").gte("date", startOfMonth).lte("date", endOfMonth).order("date", { ascending: false }),
-      supabase.from("expenses").select("*").gte("date", startOfMonth).lte("date", endOfMonth).order("date", { ascending: false }),
-      supabase.from("income_sources").select("*"),
-      supabase.from("categories").select("*"),
-      supabase.from("profiles").select("user_id, full_name"),
+      supabase.from("incomes").select("*").in("user_id", familyUserIds).gte("date", startOfMonth).lte("date", endOfMonth).order("date", { ascending: false }),
+      supabase.from("expenses").select("*").in("user_id", familyUserIds).gte("date", startOfMonth).lte("date", endOfMonth).order("date", { ascending: false }),
+      supabase.from("income_sources").select("*").eq("user_id", effectiveUserId),
+      supabase.from("categories").select("*").eq("user_id", effectiveUserId),
+      supabase.from("profiles").select("user_id, full_name").in("user_id", familyUserIds),
     ]);
 
     setIncomeSources(sourcesRes.data || []);

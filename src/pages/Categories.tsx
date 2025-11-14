@@ -8,6 +8,7 @@ import { CategoryDialog } from "@/components/CategoryDialog";
 import { Category, IncomeSource, CategoryBudget, CategoryAllocation } from "@/types/budget";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useFamily } from "@/hooks/useFamily";
 import { useCurrency } from "@/hooks/useCurrency";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -47,21 +48,79 @@ const Categories = () => {
   }, [user, selectedDate]);
 
   const loadData = async () => {
+    if (!user) return;
+    
     try {
-      // Load income sources
+      // Get family members to include their transactions
+      let familyUserIds = [user.id];
+
+      // Check if user is a family owner
+      const { data: ownedFamily } = await supabase
+        .from('families')
+        .select('id')
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      let familyId: string | null = null;
+
+      if (ownedFamily?.id) {
+        familyId = ownedFamily.id;
+      } else {
+        // Check if user is a family member
+        const { data: membership } = await supabase
+          .from('family_members')
+          .select('family_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (membership?.family_id) {
+          familyId = membership.family_id;
+        }
+      }
+
+      // Store effectiveUserId for reuse
+      let effectiveUserId = user.id;
+
+      if (familyId) {
+        // Get family owner
+        const { data: familyData } = await supabase
+          .from('families')
+          .select('owner_id')
+          .eq('id', familyId)
+          .single();
+
+        // Get all family members
+        const { data: members } = await supabase
+          .from('family_members')
+          .select('user_id')
+          .eq('family_id', familyId);
+
+        // Include owner and all members
+        if (familyData?.owner_id) {
+          effectiveUserId = familyData.owner_id; // Use owner's ID for categories/sources
+          familyUserIds = [familyData.owner_id];
+          if (members && members.length > 0) {
+            familyUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
+          }
+        }
+      }
+
+      // Load income sources (effective user scope)
       const { data: sourcesData, error: sourcesError } = await supabase
         .from('income_sources')
-        .select('*');
+        .select('*')
+        .eq('user_id', effectiveUserId);
       
       if (sourcesError) throw sourcesError;
 
-      // Calculate actual amounts from incomes for current month
+      // Calculate actual amounts from incomes for current month (family scope)
       const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1).toISOString();
       const endOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
       
       const { data: incomesData, error: incomesError } = await supabase
         .from('incomes')
         .select('source_id, amount, currency')
+        .in('user_id', familyUserIds)
         .gte('date', startOfMonth)
         .lte('date', endOfMonth);
       
@@ -99,10 +158,11 @@ const Categories = () => {
       console.log('Loaded income sources with amounts:', mappedSources);
       setIncomeSources(mappedSources);
 
-      // Load categories
+      // Load categories (effective user scope)
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
         .select('*')
+        .eq('user_id', effectiveUserId)
         .order('created_at', { ascending: false });
 
       if (categoriesError) throw categoriesError;
@@ -114,10 +174,11 @@ const Categories = () => {
 
       if (allocationsError) throw allocationsError;
 
-      // Load expenses for current month (include currency)
+      // Load expenses for current month (family scope, include currency)
       const { data: expensesData, error: expensesError } = await supabase
         .from('expenses')
         .select('category_id, amount, currency')
+        .in('user_id', familyUserIds)
         .gte('date', startOfMonth)
         .lte('date', endOfMonth);
 
@@ -154,13 +215,13 @@ const Categories = () => {
       const {
         data: previousIncomesData,
         error: previousIncomesError
-      } = await supabase.from('incomes').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      } = await supabase.from('incomes').select('*').in('user_id', familyUserIds).gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousIncomesError) throw previousIncomesError;
 
       const {
         data: previousExpensesData,
         error: previousExpensesError
-      } = await supabase.from('expenses').select('*').gte('date', previousMonthStart).lte('date', previousMonthEnd);
+      } = await supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousExpensesError) throw previousExpensesError;
 
       // Calculate debts and carry-overs for each category from previous month
