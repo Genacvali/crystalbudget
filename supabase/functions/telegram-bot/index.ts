@@ -1792,9 +1792,14 @@ async function handleCallbackQuery(query) {
       return;
     }
     
-    // Single currency or no allocations - use category currency or user currency automatically
+    // Single currency or no allocations - use category currency, detected currency, or user currency
     const currencyArray = Array.from(currencies);
-    const currency = currencyArray.length > 0 ? currencyArray[0] : (await getUserCurrency(userId));
+    // Priority: 1) category currency, 2) detected currency from text, 3) user default currency
+    const categoryCurrency = currencyArray.length > 0 ? currencyArray[0] : null;
+    const detectedCurrency = session.detectedCurrency || null;
+    const currency = categoryCurrency || detectedCurrency || (await getUserCurrency(userId));
+    
+    console.log(`Currency selection: categoryCurrency=${categoryCurrency}, detectedCurrency=${detectedCurrency}, finalCurrency=${currency}`);
     
     // Try to get category info, but use fallback if it fails
     let categoryName = 'Категория';
@@ -3449,7 +3454,6 @@ async function handleTextMessage(message, userId) {
 async function handleFreeTextExpense(chatId, userId, text) {
   console.log(`handleFreeTextExpense called with text: "${text}"`);
   const effectiveUserId = await getEffectiveUserId(userId);
-  const currency = await getUserCurrency(effectiveUserId);
   
   // Normalize text: remove extra spaces, trim
   const normalizedText = text.trim().replace(/\s+/g, ' ');
@@ -3470,6 +3474,7 @@ async function handleFreeTextExpense(chatId, userId, text) {
   
   let amount = null;
   let description = null;
+  let detectedCurrency = null; // Currency detected from text (if any)
   
   for (let i = 0; i < patterns.length; i++) {
     const pattern = patterns[i];
@@ -3480,12 +3485,30 @@ async function handleFreeTextExpense(chatId, userId, text) {
         // Standard order: amount first
         amount = parseFloat(match[1].replace(',', '.'));
         description = match[2].trim();
+        // Check if currency was mentioned in the pattern
+        const currencyMatch = normalizedText.match(/руб(?:лей|ля|ль)?|₽|р\.?|usd|\$|uah|eur|€/i);
+        if (currencyMatch) {
+          const curr = currencyMatch[0].toLowerCase();
+          if (curr.includes('руб') || curr.includes('₽') || curr === 'р' || curr === 'р.') detectedCurrency = 'RUB';
+          else if (curr.includes('usd') || curr === '$') detectedCurrency = 'USD';
+          else if (curr.includes('eur') || curr === '€') detectedCurrency = 'EUR';
+          else if (curr.includes('uah')) detectedCurrency = 'UAH';
+        }
       } else {
         // Reverse order: description first
         description = match[1].trim();
         amount = parseFloat(match[2].replace(',', '.'));
+        // Check if currency was mentioned
+        const currencyMatch = normalizedText.match(/руб(?:лей|ля|ль)?|₽|р\.?|usd|\$|uah|eur|€/i);
+        if (currencyMatch) {
+          const curr = currencyMatch[0].toLowerCase();
+          if (curr.includes('руб') || curr.includes('₽') || curr === 'р' || curr === 'р.') detectedCurrency = 'RUB';
+          else if (curr.includes('usd') || curr === '$') detectedCurrency = 'USD';
+          else if (curr.includes('eur') || curr === '€') detectedCurrency = 'EUR';
+          else if (curr.includes('uah')) detectedCurrency = 'UAH';
+        }
       }
-      console.log(`Parsed: amount=${amount}, description="${description}"`);
+      console.log(`Parsed: amount=${amount}, description="${description}", detectedCurrency=${detectedCurrency}`);
       break;
     }
   }
@@ -3563,11 +3586,16 @@ async function handleFreeTextExpense(chatId, userId, text) {
     return;
   }
   
+  // Get default currency for display (will be corrected after category selection)
+  const defaultCurrency = detectedCurrency || await getUserCurrency(effectiveUserId);
+  const symbol = currencySymbols[defaultCurrency] || '₽';
+  
   await setSession(telegramId, {
     type: 'text_expense_confirmation',
     amount: amount,
     description: description,
-    originalText: text
+    originalText: text,
+    detectedCurrency: detectedCurrency // Store detected currency if any
   });
   
   // Sort categories: suggested first, then alphabetically
@@ -3578,9 +3606,6 @@ async function handleFreeTextExpense(chatId, userId, text) {
     }
     return a.name.localeCompare(b.name);
   });
-  
-  // Get currency for display
-  const symbol = currencySymbols[currency] || '₽';
   
   // Create inline keyboard with categories
   const keyboard = {

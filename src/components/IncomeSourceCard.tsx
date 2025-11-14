@@ -158,7 +158,7 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                           "text-[9px] font-medium",
                           currencyHasDebt ? "text-destructive" : "text-success"
                         )}>
-                          {currencyHasDebt ? "Долг" : "Остаток"}
+                          {currencyHasDebt ? "Долг после распределения" : "Остаток после распределения"}
                         </span>
                         <span className={cn(
                           "text-xs font-bold break-words",

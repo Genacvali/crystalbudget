@@ -17,6 +17,7 @@ import { ru } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import type { Category } from "@/types/budget";
 import { handleNumericInput } from "@/lib/numberInput";
+import { supabase } from "@/integrations/supabase/client";
 
 const expenseSchema = z.object({
   categoryId: z.string().min(1, "Выберите категорию"),
@@ -42,11 +43,61 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
   const [description, setDescription] = useState("");
   const [currency, setCurrency] = useState<string>(userCurrency || 'RUB');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [categoryCurrencies, setCategoryCurrencies] = useState<string[]>([]);
   
   const currencySymbols: Record<string, string> = {
     RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
     JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
   };
+
+  // Load currencies for selected category
+  useEffect(() => {
+    const loadCategoryCurrencies = async () => {
+      if (!categoryId) {
+        setCategoryCurrencies([]);
+        return;
+      }
+
+      try {
+        const { data: allocations, error } = await supabase
+          .from('category_allocations')
+          .select('currency')
+          .eq('category_id', categoryId);
+
+        if (error) {
+          console.error('Error loading category currencies:', error);
+          setCategoryCurrencies([]);
+          return;
+        }
+
+        // Get unique currencies from allocations
+        const currencies = new Set<string>();
+        (allocations || []).forEach(alloc => {
+          if (alloc.currency) {
+            currencies.add(alloc.currency);
+          }
+        });
+
+        const currencyArray = Array.from(currencies);
+        setCategoryCurrencies(currencyArray);
+
+        // If category has currencies, set the first one (or keep current if it's in the list)
+        if (currencyArray.length > 0) {
+          if (!currencyArray.includes(currency)) {
+            setCurrency(currencyArray[0]);
+          }
+        } else {
+          // No currencies in category, use user default
+          setCurrency(userCurrency || 'RUB');
+        }
+      } catch (error) {
+        console.error('Error loading category currencies:', error);
+        setCategoryCurrencies([]);
+      }
+    };
+
+    loadCategoryCurrencies();
+  }, [categoryId, userCurrency]);
 
   useEffect(() => {
     if (open && editingExpense) {
@@ -133,20 +184,32 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
                 onFocus={(e) => e.target.select()}
                 className="flex-1"
               />
-              <Select value={currency} onValueChange={setCurrency}>
+              <Select value={currency} onValueChange={setCurrency} disabled={!categoryId}>
                 <SelectTrigger className="w-[100px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-background z-50">
-                  <SelectItem value="RUB">₽ RUB</SelectItem>
-                  <SelectItem value="USD">$ USD</SelectItem>
-                  <SelectItem value="EUR">€ EUR</SelectItem>
-                  <SelectItem value="GBP">£ GBP</SelectItem>
-                  <SelectItem value="JPY">¥ JPY</SelectItem>
-                  <SelectItem value="CNY">¥ CNY</SelectItem>
-                  <SelectItem value="KRW">₩ KRW</SelectItem>
-                  <SelectItem value="GEL">₾ GEL</SelectItem>
-                  <SelectItem value="AMD">֏ AMD</SelectItem>
+                  {categoryCurrencies.length > 0 ? (
+                    // Show only currencies from category
+                    categoryCurrencies.map(curr => (
+                      <SelectItem key={curr} value={curr}>
+                        {currencySymbols[curr] || curr} {curr}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    // Show all currencies if no category selected or category has no allocations
+                    <>
+                      <SelectItem value="RUB">₽ RUB</SelectItem>
+                      <SelectItem value="USD">$ USD</SelectItem>
+                      <SelectItem value="EUR">€ EUR</SelectItem>
+                      <SelectItem value="GBP">£ GBP</SelectItem>
+                      <SelectItem value="JPY">¥ JPY</SelectItem>
+                      <SelectItem value="CNY">¥ CNY</SelectItem>
+                      <SelectItem value="KRW">₩ KRW</SelectItem>
+                      <SelectItem value="GEL">₾ GEL</SelectItem>
+                      <SelectItem value="AMD">֏ AMD</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
