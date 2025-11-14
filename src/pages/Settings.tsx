@@ -638,7 +638,8 @@ const Settings = () => {
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
-    if (error) {
+    // Ignore "Auth session missing" error as it means user is already logged out
+    if (error && !error.message.includes('Auth session missing')) {
       toast({
         variant: "destructive",
         title: "Ошибка выхода",
