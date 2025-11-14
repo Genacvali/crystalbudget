@@ -475,11 +475,58 @@ async function generateCloudPaymentsLink(userId, planType, amount, email) {
   const paymentUrl = `https://widget.cloudpayments.ru/pay?publicId=${CLOUDPAYMENTS_PUBLIC_ID}&description=Подписка CrystalBudget&amount=${amount}&currency=RUB&accountId=${userId}&invoiceId=${orderId}&email=${email || ''}`;
   return paymentUrl;
 }
-async function handleStart(chatId, telegramId, firstName, lastName, username) {
+async function handleStart(chatId, telegramId, firstName, lastName, username, param = null) {
+  console.log(`handleStart called: telegramId=${telegramId}, param=${param}`);
+  
   // Check if already linked
   const userId = await getUserByTelegramId(telegramId);
   if (userId) {
-    // Get quick balance info
+    // User already exists
+    // If came from website (param='auth'), show "already linked" message
+    if (param === 'auth') {
+      const webAppKeyboard = {
+        inline_keyboard: [
+          [
+            {
+              text: '🌐 Открыть веб-приложение',
+              web_app: { url: 'https://crystalbudget.net' }
+            }
+          ],
+          [
+            {
+              text: '❓ Помощь',
+              callback_data: 'help'
+            }
+          ]
+        ]
+      };
+      
+      await sendTelegramMessage(
+        chatId,
+        `✅ <b>Вы уже авторизованы!</b>\n\n` +
+        `Ваш Telegram уже связан с аккаунтом CrystalBudget.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `📱 <b>Telegram бот</b> — удобный инструмент для быстрого добавления транзакций:\n\n` +
+        `💸 <b>Добавить расход:</b>\n` +
+        `   • Напишите: <code>500 продукты</code>\n` +
+        `   • Голосовое сообщение\n` +
+        `   • Фото чека\n\n` +
+        `💰 <b>Добавить доход:</b>\n` +
+        `   • Напишите: <code>доход 50000 зарплата</code>\n` +
+        `   • Голосовое сообщение\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `⚙️ <b>Основная настройка</b> происходит в веб-приложении:\n` +
+        `   • Создание категорий и источников дохода\n` +
+        `   • Настройка бюджета\n` +
+        `   • Аналитика и отчеты\n` +
+        `   • Управление семьей\n\n` +
+        `💡 Нажмите кнопку ниже, чтобы открыть веб-приложение`,
+        webAppKeyboard
+      );
+      return;
+    }
+    
+    // Regular /start - show welcome with balance
     const effectiveUserId = await getEffectiveUserId(userId);
     const currency = await getUserCurrency(effectiveUserId);
     const symbol = currencySymbols[currency] || '₽';
@@ -503,7 +550,6 @@ async function handleStart(chatId, telegramId, firstName, lastName, username) {
     
     // Get current month data for family
     const now = new Date();
-    // Use local month boundaries to match web app
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
     
@@ -533,8 +579,6 @@ async function handleStart(chatId, telegramId, firstName, lastName, username) {
     await sendTelegramMessage(
       chatId, 
       `👋 <b>Добро пожаловать, ${firstName}!</b>\n\n` +
-      `💰 <b>Ваш баланс за ${new Date().toLocaleDateString('ru-RU', { month: 'long' })}:</b>\n` +
-      `${balanceEmoji} <b>${balanceText}</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `📱 <b>Как пользоваться ботом:</b>\n\n` +
       `💸 <b>Добавить расход:</b>\n` +
@@ -551,7 +595,166 @@ async function handleStart(chatId, telegramId, firstName, lastName, username) {
     );
     return;
   }
-  // Generate auth code
+  
+  // New user - offer two options: create new account or link existing
+    const keyboard = {
+      inline_keyboard: [
+        [
+        { text: '✨ Создать новый аккаунт', callback_data: 'auth_create_new' }
+        ],
+        [
+        { text: '🔗 Связать с существующим', callback_data: 'auth_link_existing' }
+        ]
+      ]
+    };
+    
+    await sendTelegramMessage(
+      chatId, 
+      `👋 <b>Привет, ${firstName}!</b>\n\n` +
+    `Добро пожаловать в <b>CrystalBudget</b> — умный помощник для управления личными финансами.\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Выберите способ авторизации:\n\n` +
+    `✨ <b>Создать новый аккаунт</b>\n` +
+    `Начните использовать бот прямо сейчас. Можно добавить email позже для доступа через веб-приложение.\n\n` +
+    `🔗 <b>Связать с существующим</b>\n` +
+    `Если у вас уже есть аккаунт в CrystalBudget (авторизация через email), получите код для связывания.`,
+      keyboard
+  );
+}
+// Handle creating new account via Telegram
+async function handleAuthCreateNew(chatId, telegramId, firstName, lastName, username) {
+  try {
+    // Check if already linked
+    const existingUserId = await getUserByTelegramId(telegramId);
+    if (existingUserId) {
+      await sendTelegramMessage(
+        chatId,
+        `✅ <b>Ваш аккаунт уже связан!</b>\n\n` +
+        `Вы уже можете пользоваться ботом для учета расходов и доходов.\n\n` +
+        `💡 Просто напишите сумму и описание, например: <code>500 продукты</code>`,
+        getHelpKeyboard()
+    );
+    return;
+  }
+    
+    // Create new user account via Supabase Auth
+    const fullName = `${firstName}${lastName ? ' ' + lastName : ''}`;
+    
+    // Generate a temporary email for Telegram-only users
+    const tempEmail = `telegram_${telegramId}@crystalbudget.temp`;
+    const tempPassword = crypto.randomUUID(); // Random secure password
+    
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: tempEmail,
+      password: tempPassword,
+      email_confirm: true, // Skip email confirmation
+      user_metadata: {
+        full_name: fullName,
+        telegram_only: true
+      }
+    });
+    
+    if (authError || !authData.user) {
+      console.error('Error creating auth user:', authError);
+      await sendTelegramMessage(chatId, '❌ Ошибка создания аккаунта. Попробуйте позже.');
+      return;
+    }
+    
+    const newUser = authData.user;
+    
+    // Link Telegram account
+    const { error: telegramError } = await supabase
+      .from('telegram_users')
+      .insert({
+        user_id: newUser.id,
+        telegram_id: telegramId.toString(),
+        telegram_username: username,
+        telegram_first_name: firstName,
+        telegram_last_name: lastName
+      });
+    
+    if (telegramError) {
+      console.error('Error linking telegram:', telegramError);
+      // Clean up auth user if telegram link failed
+      await supabase.auth.admin.deleteUser(newUser.id);
+      await sendTelegramMessage(chatId, '❌ Ошибка связывания с Telegram. Попробуйте позже.');
+      return;
+    }
+    
+    // Create default user preferences
+    await supabase.from('user_preferences').insert({
+      user_id: newUser.id,
+      currency: 'RUB',
+      reminder_enabled: false,
+      reminder_time: '21:00'
+    });
+    
+    // Send welcome message
+    const webAppKeyboard = {
+      inline_keyboard: [
+        [
+          {
+            text: '🌐 Открыть веб-приложение',
+            web_app: { url: 'https://crystalbudget.net' }
+          }
+        ],
+        [
+          {
+            text: '❓ Помощь',
+            callback_data: 'help'
+          }
+        ]
+      ]
+    };
+    
+    await sendTelegramMessage(
+      chatId,
+      `🎉 <b>Аккаунт успешно создан!</b>\n\n` +
+      `Добро пожаловать в CrystalBudget, ${firstName}!\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `⚙️ <b>Сначала настройте аккаунт в веб-приложении:</b>\n\n` +
+      `   • Создайте категории расходов\n` +
+      `   • Добавьте источники дохода\n` +
+      `   • Настройте бюджет\n\n` +
+      `💡 Нажмите кнопку "🌐 Открыть веб-приложение" ниже\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📱 <b>Telegram бот</b> — для быстрого добавления транзакций:\n\n` +
+      `💸 Добавить расход:\n` +
+      `   • Напишите: <code>500 продукты</code>\n` +
+      `   • Голосовое сообщение\n` +
+      `   • Фото чека\n\n` +
+      `💰 Добавить доход:\n` +
+      `   • Напишите: <code>доход 50000 зарплата</code>\n` +
+      `   • Голосовое сообщение\n\n` +
+      `💡 После настройки категорий в веб-приложении, вы сможете использовать бота для быстрого учета расходов и доходов!`,
+      webAppKeyboard
+    );
+    
+  } catch (error) {
+    console.error('Exception in handleAuthCreateNew:', error);
+    await sendTelegramMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+  }
+}
+
+// Handle linking existing email account
+async function handleAuthLinkExisting(chatId, telegramId, firstName, lastName, username) {
+  // Check if already linked
+  const existingUserId = await getUserByTelegramId(telegramId);
+  if (existingUserId) {
+    await sendTelegramMessage(
+      chatId,
+      `✅ <b>Ваш аккаунт уже связан!</b>\n\n` +
+      `Telegram уже подключен к вашему аккаунту CrystalBudget.\n\n` +
+      `💡 Можете сразу начинать добавлять транзакции:\n` +
+      `   • Напишите: <code>500 продукты</code>\n` +
+      `   • Отправьте голосовое сообщение\n` +
+      `   • Сфотографируйте чек`,
+      getHelpKeyboard()
+    );
+    return;
+  }
+  
+  // Generate auth code for linking
   const authCode = Math.random().toString(36).substring(2, 10).toUpperCase();
   const { error } = await supabase.from('telegram_auth_codes').insert({
     telegram_id: telegramId,
@@ -560,13 +763,28 @@ async function handleStart(chatId, telegramId, firstName, lastName, username) {
     telegram_first_name: firstName,
     telegram_last_name: lastName
   });
+  
   if (error) {
     console.error('Error creating auth code:', error);
     await sendTelegramMessage(chatId, '❌ Ошибка создания кода авторизации. Попробуйте позже.');
     return;
   }
-  await sendTelegramMessage(chatId, `👋 Привет, ${firstName}!\n\n` + `🔐 Ваш код авторизации:\n<code>${authCode}</code>\n\n` + `📱 Введите этот код на странице настроек в приложении CrystalBudget.\n\n` + `⏱ Код действителен 10 минут.`);
+  
+  await sendTelegramMessage(
+    chatId,
+    `🔗 <b>Связывание с существующим аккаунтом</b>\n\n` +
+    `Ваш код авторизации:\n` +
+    `<code>${authCode}</code>\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `📱 <b>Как связать:</b>\n\n` +
+    `1️⃣ Войдите в веб-приложение CrystalBudget через email\n` +
+    `2️⃣ Перейдите в Настройки → Telegram\n` +
+    `3️⃣ Введите этот код\n\n` +
+    `⏱ <b>Код действителен 10 минут</b>\n\n` +
+    `💡 После связывания вы сможете использовать бот для учета транзакций, а веб-приложение для аналитики и настроек.`
+  );
 }
+
 async function handleBalance(chatId, userId) {
   // Get user currency (use effectiveUserId for currency settings)
   const effectiveUserId = await getEffectiveUserId(userId);
@@ -1223,8 +1441,25 @@ async function startAddIncome(chatId, userId) {
 async function handleCallbackQuery(query) {
   const chatId = query.message.chat.id;
   const telegramId = query.from.id;
+  const firstName = query.from.first_name;
+  const lastName = query.from.last_name || '';
+  const username = query.from.username || '';
   const data = query.data;
   console.log(`handleCallbackQuery: data="${data}", telegramId=${telegramId}`);
+  
+  // Handle auth callbacks before checking userId
+  if (data === 'auth_create_new') {
+    await answerCallbackQuery(query.id, '');
+    await handleAuthCreateNew(chatId, telegramId, firstName, lastName, username);
+    return;
+  }
+  
+  if (data === 'auth_link_existing') {
+    await answerCallbackQuery(query.id, '');
+    await handleAuthLinkExisting(chatId, telegramId, firstName, lastName, username);
+    return;
+  }
+  
   const userId = await getUserByTelegramId(telegramId);
   console.log(`User ID from telegram: ${userId || 'not found'}`);
   if (!userId) {
@@ -1232,6 +1467,63 @@ async function handleCallbackQuery(query) {
     await sendTelegramMessage(chatId, '❌ Вы не авторизованы. Используйте /start', getHelpKeyboard());
     return;
   }
+  
+  // Handle help button
+  if (data === 'help') {
+    await answerCallbackQuery(query.id, '');
+    await sendTelegramMessage(
+      chatId, 
+      `📖 <b>Справка по использованию CrystalBudget</b>\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `💸 <b>ДОБАВЛЕНИЕ РАСХОДОВ</b>\n\n` +
+      `Бот понимает расходы в свободной форме. Просто напишите сумму и описание:\n\n` +
+      `✅ <code>500 продукты</code>\n` +
+      `✅ <code>такси 250</code>\n` +
+      `✅ <code>1500 обед в ресторане</code>\n` +
+      `✅ <code>3000 заправка</code>\n\n` +
+      `🎤 <b>Голосовые сообщения:</b>\n` +
+      `Произнесите: "купил продуктов на 500 рублей" или "потратил 1500 на обед"\n\n` +
+      `📸 <b>Фото чека:</b>\n` +
+      `Отправьте фото чека - бот автоматически распознает сумму, магазин и дату\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `💰 <b>ДОБАВЛЕНИЕ ДОХОДОВ</b>\n\n` +
+      `Начните сообщение со слова "доход":\n\n` +
+      `✅ <code>доход 50000 зарплата</code>\n` +
+      `✅ <code>доход 10000 подработка</code>\n` +
+      `✅ <code>доход 5000 возврат долга</code>\n\n` +
+      `🎤 <b>Голосовые сообщения:</b>\n` +
+      `Произнесите: "получил зарплату 50000" или "доход 10000 подработка"\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `✏️ <b>РЕДАКТИРОВАНИЕ ТРАНЗАКЦИЙ</b>\n\n` +
+      `После добавления транзакции под сообщением появятся кнопки:\n\n` +
+      `✏️ <b>Редактировать</b> - изменить сумму, описание или категорию\n` +
+      `🗑️ <b>Удалить</b> - удалить транзакцию\n\n` +
+      `Вы можете изменить:\n` +
+      `• Сумму транзакции\n` +
+      `• Описание\n` +
+      `• Категорию (для расходов)\n` +
+      `• Источник дохода (для доходов)\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📋 <b>КОМАНДЫ</b>\n\n` +
+      `<code>/start</code> - приветствие и краткая инструкция\n` +
+      `<code>/help</code> - эта справка\n` +
+      `<code>/balance</code> - баланс за текущий месяц\n` +
+      `<code>/history</code> - история транзакций\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `💡 <b>СОВЕТЫ</b>\n\n` +
+      `• Бот автоматически определяет категорию по описанию\n` +
+      `• Если категория не найдена, вам предложат выбрать из списка\n` +
+      `• Для мультивалютных категорий бот попросит выбрать валюту\n` +
+      `• Все транзакции синхронизируются с веб-приложением\n` +
+      `• Если вы в семье, видны транзакции всех членов семьи\n\n` +
+      `⚙️ <b>Основная настройка</b> (категории, бюджет, аналитика) происходит в веб-приложении:\n` +
+      `🌐 crystalbudget.net\n\n` +
+      `❓ <b>Вопросы?</b> Напишите в поддержку через веб-приложение.`,
+      getHelpKeyboard()
+    );
+    return;
+  }
+  
   // Get effective user ID (family owner if in family)
   const effectiveUserId = await getEffectiveUserId(userId);
   // Get user currency
@@ -3591,8 +3883,11 @@ async function handleMessage(update) {
   console.log(`Received message from ${telegramId}: ${text}`);
   // Handle commands
   if (text.startsWith('/')) {
-    if (text === '/start') {
-      await handleStart(chatId, telegramId, firstName, lastName, username);
+    if (text.startsWith('/start')) {
+      // Extract parameter from /start command (e.g., /start auth)
+      const parts = text.split(' ');
+      const param = parts.length > 1 ? parts[1] : null;
+      await handleStart(chatId, telegramId, firstName, lastName, username, param);
       return;
     }
     // Check authorization for other commands
