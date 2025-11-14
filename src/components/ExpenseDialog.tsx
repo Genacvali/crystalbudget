@@ -29,32 +29,39 @@ interface ExpenseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: Category[];
-  onSave: (expense: { categoryId: string; amount: number; date: string; description?: string }) => void;
-  editingExpense?: { id: string; categoryId: string; amount: number; date: string; description?: string } | null;
+  onSave: (expense: { categoryId: string; amount: number; date: string; description?: string; currency?: string }) => void;
+  editingExpense?: { id: string; categoryId: string; amount: number; date: string; description?: string; currency?: string } | null;
 }
 
 export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingExpense }: ExpenseDialogProps) {
   const { toast } = useToast();
-  const { convertToRubles, convertFromRubles } = useCurrency();
+  const { convertToRubles, convertFromRubles, currency: userCurrency } = useCurrency();
   const [categoryId, setCategoryId] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [description, setDescription] = useState("");
+  const [currency, setCurrency] = useState<string>(userCurrency || 'RUB');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  
+  const currencySymbols: Record<string, string> = {
+    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+    JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+  };
 
   useEffect(() => {
     if (open && editingExpense) {
       setCategoryId(editingExpense.categoryId);
-      // Конвертируем сумму из рублей в текущую валюту для отображения
-      const convertedAmount = convertFromRubles(editingExpense.amount);
-      setAmount(convertedAmount.toString());
+      // Используем оригинальную сумму без конвертации (хранится в исходной валюте)
+      setAmount(editingExpense.amount.toString());
       setDate(new Date(editingExpense.date));
       setDescription(editingExpense.description || "");
+      setCurrency(editingExpense.currency || userCurrency || 'RUB');
     } else if (!open) {
       setCategoryId("");
       setAmount("");
       setDate(new Date());
       setDescription("");
+      setCurrency(userCurrency || 'RUB');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingExpense?.id]);
@@ -68,14 +75,13 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         description: description.trim() || undefined,
       });
 
-      // Конвертируем сумму в рубли перед сохранением
-      const amountInRubles = convertToRubles(validated.amount);
-
+      // Сохраняем сумму в исходной валюте (без конвертации)
       onSave({
         categoryId: validated.categoryId,
-        amount: amountInRubles,
+        amount: validated.amount,
         date: validated.date,
         description: validated.description,
+        currency: currency,
       });
       onOpenChange(false);
     } catch (error) {
@@ -116,15 +122,34 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
           </div>
           <div className="grid gap-2">
             <Label htmlFor="amount">Сумма</Label>
-            <Input
-              id="amount"
-              type="text"
-              inputMode="decimal"
-              placeholder="1000"
-              value={amount}
-              onChange={(e) => handleNumericInput(e.target.value, setAmount)}
-              onFocus={(e) => e.target.select()}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="amount"
+                type="text"
+                inputMode="decimal"
+                placeholder="1000"
+                value={amount}
+                onChange={(e) => handleNumericInput(e.target.value, setAmount)}
+                onFocus={(e) => e.target.select()}
+                className="flex-1"
+              />
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  <SelectItem value="RUB">₽ RUB</SelectItem>
+                  <SelectItem value="USD">$ USD</SelectItem>
+                  <SelectItem value="EUR">€ EUR</SelectItem>
+                  <SelectItem value="GBP">£ GBP</SelectItem>
+                  <SelectItem value="JPY">¥ JPY</SelectItem>
+                  <SelectItem value="CNY">¥ CNY</SelectItem>
+                  <SelectItem value="KRW">₩ KRW</SelectItem>
+                  <SelectItem value="GEL">₾ GEL</SelectItem>
+                  <SelectItem value="AMD">֏ AMD</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="grid gap-2">
             <Label>Дата</Label>

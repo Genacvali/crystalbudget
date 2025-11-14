@@ -12,6 +12,7 @@ export interface CategoryAllocation {
   incomeSourceId: string;
   allocationType: 'amount' | 'percent';
   allocationValue: number;
+  currency?: string; // Currency for this allocation (default: user's currency)
 }
 
 export interface Category {
@@ -31,6 +32,7 @@ export interface Income {
   amount: number;
   date: string;
   description?: string;
+  currency?: string; // Currency of the income
 }
 
 export interface Expense {
@@ -39,6 +41,7 @@ export interface Expense {
   amount: number;
   date: string;
   description?: string;
+  currency?: string; // Currency of the expense
 }
 
 export interface MonthData {
@@ -55,6 +58,14 @@ export interface CategoryBudget {
   remaining: number;
   debt?: number; // Debt from previous month
   carryOver?: number; // Positive balance from previous month
+  // Multi-currency support
+  budgetsByCurrency?: Record<string, {
+    allocated: number;
+    spent: number;
+    remaining: number;
+    debt?: number;
+    carryOver?: number;
+  }>;
 }
 
 export interface SourceSummary {
@@ -63,6 +74,13 @@ export interface SourceSummary {
   totalSpent: number;
   remaining: number;
   debt: number;
+  // Multi-currency support
+  summariesByCurrency?: Record<string, {
+    totalIncome: number;
+    totalSpent: number;
+    remaining: number;
+    debt: number;
+  }>;
 }
 
 export type SubscriptionPlanType = 'trial' | 'monthly' | 'quarterly' | 'yearly';

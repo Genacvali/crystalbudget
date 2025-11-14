@@ -35,13 +35,25 @@ interface Transaction {
   sourceId?: string;
   categoryId?: string;
   userName?: string;
+  currency?: string; // Currency of the transaction
 }
 
 const Transactions = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
-  const { formatAmount } = useCurrency();
+  const { formatAmount, currency: userCurrency } = useCurrency();
   const { createNotification } = useNotifications();
+  
+  // Format amount with currency symbol
+  const formatAmountWithCurrency = (amount: number, currency?: string) => {
+    const currencySymbols: Record<string, string> = {
+      RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+      JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+    };
+    const curr = currency || userCurrency || 'RUB';
+    const symbol = currencySymbols[curr] || curr;
+    return `${amount.toLocaleString('ru-RU')} ${symbol}`;
+  };
   const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -113,6 +125,7 @@ const Transactions = () => {
         description: income.description,
         sourceId: income.source_id,
         userName: profilesMap[income.user_id] || "Вы",
+        currency: income.currency, // Add currency field
       };
     });
 
@@ -127,6 +140,7 @@ const Transactions = () => {
         description: expense.description,
         categoryId: expense.category_id,
         userName: profilesMap[expense.user_id] || "Вы",
+        currency: expense.currency, // Add currency field
       };
     });
 
@@ -134,7 +148,7 @@ const Transactions = () => {
     setTransactions([...incomeTransactions, ...expenseTransactions]);
   };
 
-  const handleAddIncome = async (income: { sourceId: string; amount: number; date: string; description?: string }) => {
+  const handleAddIncome = async (income: { sourceId: string; amount: number; date: string; description?: string; currency?: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -144,6 +158,7 @@ const Transactions = () => {
         amount: income.amount,
         date: income.date,
         description: income.description,
+        currency: income.currency || userCurrency || 'RUB',
       }).eq("id", editingIncome.id);
 
       if (error) {
@@ -160,6 +175,7 @@ const Transactions = () => {
         amount: income.amount,
         date: income.date,
         description: income.description,
+        currency: income.currency || userCurrency || 'RUB',
       });
 
       if (error) {
@@ -190,7 +206,7 @@ const Transactions = () => {
     }
   };
 
-  const handleAddExpense = async (expense: { categoryId: string; amount: number; date: string; description?: string }) => {
+  const handleAddExpense = async (expense: { categoryId: string; amount: number; date: string; description?: string; currency?: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -200,6 +216,7 @@ const Transactions = () => {
         amount: expense.amount,
         date: expense.date,
         description: expense.description,
+        currency: expense.currency || userCurrency || 'RUB',
       }).eq("id", editingExpense.id);
 
       if (error) {
@@ -216,6 +233,7 @@ const Transactions = () => {
         amount: expense.amount,
         date: expense.date,
         description: expense.description,
+        currency: expense.currency || userCurrency || 'RUB',
       });
 
       if (error) {
@@ -254,6 +272,7 @@ const Transactions = () => {
         amount: transaction.amount,
         date: transaction.date,
         description: transaction.description,
+        currency: transaction.currency,
       });
       setIncomeDialogOpen(true);
     } else {
@@ -263,6 +282,7 @@ const Transactions = () => {
         amount: transaction.amount,
         date: transaction.date,
         description: transaction.description,
+        currency: transaction.currency,
       });
       setExpenseDialogOpen(true);
     }
@@ -330,6 +350,12 @@ const Transactions = () => {
     totalIncome: number;
     totalExpense: number;
     netAmount: number;
+    // Multi-currency support
+    totalsByCurrency?: Record<string, {
+      totalIncome: number;
+      totalExpense: number;
+      netAmount: number;
+    }>;
   }
 
   const groupTransactionsByDate = (transactions: Transaction[]): GroupedTransactions[] => {
@@ -351,12 +377,31 @@ const Transactions = () => {
 
     return Array.from(grouped.entries()).map(([dateKey, transactions]) => {
       const date = new Date(dateKey);
-      const totalIncome = transactions
-        .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0);
-      const totalExpense = transactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0);
+      
+      // Group by currency
+      const totalsByCurrency: Record<string, {
+        totalIncome: number;
+        totalExpense: number;
+        netAmount: number;
+      }> = {};
+      
+      transactions.forEach(transaction => {
+        const currency = transaction.currency || userCurrency || 'RUB';
+        if (!totalsByCurrency[currency]) {
+          totalsByCurrency[currency] = { totalIncome: 0, totalExpense: 0, netAmount: 0 };
+        }
+        
+        if (transaction.type === 'income') {
+          totalsByCurrency[currency].totalIncome += transaction.amount;
+        } else {
+          totalsByCurrency[currency].totalExpense += transaction.amount;
+        }
+        totalsByCurrency[currency].netAmount = totalsByCurrency[currency].totalIncome - totalsByCurrency[currency].totalExpense;
+      });
+      
+      // Calculate totals for primary currency (for backward compatibility)
+      const primaryCurrency = userCurrency || 'RUB';
+      const primaryTotals = totalsByCurrency[primaryCurrency] || { totalIncome: 0, totalExpense: 0, netAmount: 0 };
 
       // Определяем относительную метку
       let relativeLabel = '';
@@ -376,9 +421,10 @@ const Transactions = () => {
         transactions: transactions.sort((a, b) => 
           new Date(b.date).getTime() - new Date(a.date).getTime()
         ),
-        totalIncome,
-        totalExpense,
-        netAmount: totalIncome - totalExpense
+        totalIncome: primaryTotals.totalIncome,
+        totalExpense: primaryTotals.totalExpense,
+        netAmount: primaryTotals.netAmount,
+        totalsByCurrency: Object.keys(totalsByCurrency).length > 1 ? totalsByCurrency : undefined
       };
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
@@ -489,22 +535,56 @@ const Transactions = () => {
                         {group.dateLabel}
                       </h3>
                     </div>
-                    <div className="flex items-center gap-3 sm:gap-4">
-                      {group.totalIncome > 0 && (
-                        <Badge variant="outline" className="bg-success/10 text-success border-success/20">
-                          <ArrowUpRight className="h-3 w-3 mr-1" />
-                          +{formatAmount(group.totalIncome)}
-                        </Badge>
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                      {group.totalsByCurrency && Object.keys(group.totalsByCurrency).length > 1 ? (
+                        // Multiple currencies - show separate badges
+                        Object.entries(group.totalsByCurrency).map(([currency, totals]) => {
+                          const currencySymbols: Record<string, string> = {
+                            RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                            JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                          };
+                          const symbol = currencySymbols[currency] || currency;
+                          
+                          return (
+                            <div key={currency} className="flex items-center gap-1.5">
+                              {totals.totalIncome > 0 && (
+                                <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-[10px] sm:text-xs">
+                                  <ArrowUpRight className="h-2.5 w-2.5 sm:h-3 sm:w-3 mr-0.5" />
+                                  +{totals.totalIncome.toLocaleString('ru-RU')} {symbol}
+                                </Badge>
+                              )}
+                              {totals.totalExpense > 0 && (
+                                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] sm:text-xs">
+                                  <ArrowDownRight className="h-2.5 w-2.5 sm:h-3 sm:w-3 mr-0.5" />
+                                  -{totals.totalExpense.toLocaleString('ru-RU')} {symbol}
+                                </Badge>
+                              )}
+                              <Badge variant={totals.netAmount >= 0 ? "default" : "destructive"} className="hidden sm:flex text-[10px] sm:text-xs">
+                                {totals.netAmount >= 0 ? '+' : ''}{totals.netAmount.toLocaleString('ru-RU')} {symbol}
+                              </Badge>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        // Single currency - show standard view
+                        <>
+                          {group.totalIncome > 0 && (
+                            <Badge variant="outline" className="bg-success/10 text-success border-success/20">
+                              <ArrowUpRight className="h-3 w-3 mr-1" />
+                              +{formatAmountWithCurrency(group.totalIncome, group.totalsByCurrency ? Object.keys(group.totalsByCurrency)[0] : userCurrency)}
+                            </Badge>
+                          )}
+                          {group.totalExpense > 0 && (
+                            <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">
+                              <ArrowDownRight className="h-3 w-3 mr-1" />
+                              -{formatAmountWithCurrency(group.totalExpense, group.totalsByCurrency ? Object.keys(group.totalsByCurrency)[0] : userCurrency)}
+                            </Badge>
+                          )}
+                          <Badge variant={group.netAmount >= 0 ? "default" : "destructive"} className="hidden sm:flex">
+                            {group.netAmount >= 0 ? '+' : ''}{formatAmountWithCurrency(group.netAmount, group.totalsByCurrency ? Object.keys(group.totalsByCurrency)[0] : userCurrency)}
+                          </Badge>
+                        </>
                       )}
-                      {group.totalExpense > 0 && (
-                        <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">
-                          <ArrowDownRight className="h-3 w-3 mr-1" />
-                          -{formatAmount(group.totalExpense)}
-                        </Badge>
-                      )}
-                      <Badge variant={group.netAmount >= 0 ? "default" : "destructive"} className="hidden sm:flex">
-                        {group.netAmount >= 0 ? '+' : ''}{formatAmount(group.netAmount)}
-                      </Badge>
                     </div>
                   </div>
                 </div>
@@ -552,7 +632,7 @@ const Transactions = () => {
                           : "text-destructive"
                       }`}>
                         {transaction.type === "income" ? "+" : "-"}
-                        {formatAmount(transaction.amount)}
+                        {formatAmountWithCurrency(transaction.amount, transaction.currency)}
                       </p>
                       <div className="flex gap-1">
                         <Button

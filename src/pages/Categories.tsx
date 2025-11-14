@@ -129,7 +129,8 @@ const Categories = () => {
             id: alloc.id,
             incomeSourceId: alloc.income_source_id,
             allocationType: alloc.allocation_type as 'amount' | 'percent',
-            allocationValue: Number(alloc.allocation_value)
+            allocationValue: Number(alloc.allocation_value),
+            currency: alloc.currency || 'RUB'
           }));
 
         return {
@@ -285,6 +286,7 @@ const Categories = () => {
               income_source_id: alloc.incomeSourceId,
               allocation_type: alloc.allocationType,
               allocation_value: alloc.allocationValue,
+              currency: alloc.currency || 'RUB',
             }))
           );
 

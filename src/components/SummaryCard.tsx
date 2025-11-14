@@ -1,6 +1,11 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { LucideIcon } from "lucide-react";
 
+const currencySymbols: Record<string, string> = {
+  RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+  JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+};
+
 interface SummaryCardProps {
   title: string;
   value: string;
@@ -8,6 +13,7 @@ interface SummaryCardProps {
   icon: LucideIcon;
   trend?: "up" | "down" | "neutral";
   variant?: "default" | "success" | "destructive";
+  valuesByCurrency?: Record<string, number>; // Multi-currency support
 }
 
 export function SummaryCard({
@@ -17,6 +23,7 @@ export function SummaryCard({
   icon: Icon,
   trend = "neutral",
   variant = "default",
+  valuesByCurrency,
 }: SummaryCardProps) {
   const variantClasses = {
     default: "bg-card border-border",
@@ -36,9 +43,24 @@ export function SummaryCard({
         <div className="flex items-start justify-between">
           <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
             <p className="text-xs sm:text-sm text-muted-foreground font-medium">{title}</p>
-            <p className={cn("text-xl sm:text-3xl font-bold break-words", textClasses[variant])}>
-              {value}
-            </p>
+            {valuesByCurrency && Object.keys(valuesByCurrency).length > 1 ? (
+              // Multiple currencies - show separate values
+              <div className="space-y-1">
+                {Object.entries(valuesByCurrency).map(([currency, amount]) => {
+                  const symbol = currencySymbols[currency] || currency;
+                  return (
+                    <p key={currency} className={cn("text-lg sm:text-2xl font-bold break-words", textClasses[variant])}>
+                      {amount.toLocaleString('ru-RU')} {symbol}
+                    </p>
+                  );
+                })}
+              </div>
+            ) : (
+              // Single currency - show standard value
+              <p className={cn("text-xl sm:text-3xl font-bold break-words", textClasses[variant])}>
+                {value}
+              </p>
+            )}
             {subtitle && (
               <p className="text-xs text-muted-foreground">{subtitle}</p>
             )}

@@ -17,7 +17,6 @@ const Settings = () => {
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
-  const [currency, setCurrency] = useState(localStorage.getItem("currency") || "RUB");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [family, setFamily] = useState<any>(null);
@@ -328,17 +327,6 @@ const Settings = () => {
       });
     }
     setLoading(false);
-  };
-
-  const handleCurrencyChange = (value: string) => {
-    setCurrency(value);
-    localStorage.setItem("currency", value);
-    // Dispatch custom event for same-tab updates
-    window.dispatchEvent(new Event("currencyChange"));
-    toast({
-      title: "Валюта изменена",
-      description: `Основная валюта: ${value}`,
-    });
   };
 
   const handleChangePassword = async () => {
@@ -764,34 +752,6 @@ const Settings = () => {
                 <Monitor className="h-5 w-5" />
                 <span className="text-xs">Системная</span>
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Валюта</CardTitle>
-            <CardDescription>Настройка отображения валюты</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="currency">Основная валюта</Label>
-              <Select value={currency} onValueChange={handleCurrencyChange}>
-                <SelectTrigger id="currency">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="RUB">RUB (₽)</SelectItem>
-                  <SelectItem value="USD">USD ($)</SelectItem>
-                  <SelectItem value="EUR">EUR (€)</SelectItem>
-                  <SelectItem value="GBP">GBP (£)</SelectItem>
-                  <SelectItem value="JPY">JPY (¥)</SelectItem>
-                  <SelectItem value="CNY">CNY (¥)</SelectItem>
-                  <SelectItem value="KRW">KRW (₩)</SelectItem>
-                  <SelectItem value="GEL">GEL (₾)</SelectItem>
-                  <SelectItem value="AMD">AMD (֏)</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>

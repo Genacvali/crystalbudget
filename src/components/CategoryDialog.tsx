@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Category, IncomeSource, CategoryAllocation } from "@/types/budget";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/useCurrency";
 import { Plus, Trash2 } from "lucide-react";
 import { handleNumericInput } from "@/lib/numberInput";
 
@@ -16,7 +17,8 @@ const categorySchema = z.object({
   allocations: z.array(z.object({
     incomeSourceId: z.string().min(1, "Выберите источник"),
     allocationType: z.enum(['amount', 'percent']),
-    allocationValue: z.number().min(0)
+    allocationValue: z.number().min(0),
+    currency: z.string().optional()
   })).min(1, "Добавьте хотя бы один источник")
 });
 
@@ -36,6 +38,7 @@ export function CategoryDialog({
   onSave
 }: CategoryDialogProps) {
   const { toast } = useToast();
+  const { currency: userCurrency } = useCurrency();
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("📁");
   const [allocations, setAllocations] = useState<CategoryAllocation[]>([]);
@@ -44,19 +47,24 @@ export function CategoryDialog({
     if (category) {
       setName(category.name);
       setIcon(category.icon);
-      setAllocations(category.allocations || []);
+      // Ensure currency is set for each allocation
+      setAllocations((category.allocations || []).map(alloc => ({
+        ...alloc,
+        currency: alloc.currency || userCurrency || 'RUB'
+      })));
     } else {
       setName("");
       setIcon("📁");
       setAllocations([]);
     }
-  }, [category, open]);
+  }, [category, open, userCurrency]);
 
   const handleAddAllocation = () => {
     setAllocations([...allocations, {
       incomeSourceId: "",
       allocationType: "amount",
-      allocationValue: 0
+      allocationValue: 0,
+      currency: userCurrency || 'RUB'
     }]);
   };
 
@@ -67,21 +75,38 @@ export function CategoryDialog({
   const handleAllocationChange = (index: number, field: keyof CategoryAllocation, value: string | number) => {
     const newAllocations = [...allocations];
     newAllocations[index] = { ...newAllocations[index], [field]: value };
+    // Ensure currency is preserved when changing other fields
+    if (field !== 'currency' && !newAllocations[index].currency) {
+      newAllocations[index].currency = userCurrency || 'RUB';
+    }
     setAllocations(newAllocations);
   };
 
   const handleSave = () => {
     try {
+      // Log allocations before validation
+      console.log('Allocations before save:', allocations);
+      
+      const allocationsToSave = allocations
+        .filter(a => a.incomeSourceId) // Filter out empty source selections
+        .map(a => {
+          // Ensure currency is always set
+          const currency = a.currency || userCurrency || 'RUB';
+          console.log(`Allocation: ${a.incomeSourceId}, currency: ${a.currency}, final: ${currency}`);
+          return {
+            incomeSourceId: a.incomeSourceId,
+            allocationType: a.allocationType,
+            allocationValue: typeof a.allocationValue === 'string' ? parseFloat(a.allocationValue) : a.allocationValue,
+            currency: currency
+          };
+        });
+      
+      console.log('Allocations to save:', allocationsToSave);
+      
       const validated = categorySchema.parse({
         name: name.trim(),
         icon: icon.trim(),
-        allocations: allocations
-          .filter(a => a.incomeSourceId) // Filter out empty source selections
-          .map(a => ({
-            incomeSourceId: a.incomeSourceId,
-            allocationType: a.allocationType,
-            allocationValue: typeof a.allocationValue === 'string' ? parseFloat(a.allocationValue) : a.allocationValue
-          }))
+        allocations: allocationsToSave
       });
 
       onSave({
@@ -215,6 +240,29 @@ export function CategoryDialog({
                     min="0"
                     max={allocation.allocationType === 'percent' ? "100" : undefined}
                   />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label className="text-xs">Валюта</Label>
+                  <Select
+                    value={allocation.currency || userCurrency || 'RUB'}
+                    onValueChange={(v) => handleAllocationChange(index, 'currency', v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background z-50">
+                      <SelectItem value="RUB">₽ RUB</SelectItem>
+                      <SelectItem value="USD">$ USD</SelectItem>
+                      <SelectItem value="EUR">€ EUR</SelectItem>
+                      <SelectItem value="GBP">£ GBP</SelectItem>
+                      <SelectItem value="JPY">¥ JPY</SelectItem>
+                      <SelectItem value="CNY">¥ CNY</SelectItem>
+                      <SelectItem value="KRW">₩ KRW</SelectItem>
+                      <SelectItem value="GEL">₾ GEL</SelectItem>
+                      <SelectItem value="AMD">֏ AMD</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             ))}

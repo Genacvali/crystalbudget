@@ -27,7 +27,7 @@ export function CategoryCard({
   showSources = true,
   compact = false
 }: CategoryCardProps) {
-  const { formatAmount } = useCurrency();
+  const { formatAmount, currency: userCurrency } = useCurrency();
   const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
   const isOverBudget = budget.spent > budget.allocated;
   const remaining = budget.allocated - budget.spent;
@@ -121,22 +121,85 @@ export function CategoryCard({
               </Badge>
             </div>
             
-            {/* Прогресс-бар */}
-            <div className="relative mb-1">
-              <Progress 
-                value={Math.min(usedPercentage, 100)} 
-                className={cn(
-                  "h-1.5 rounded-full",
-                  isOverBudget && "bg-destructive/20"
-                )}
-              />
-            </div>
+            {/* Прогресс-бары (мультивалютные или один) */}
+            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
+              <div className="space-y-1 mb-1">
+                {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
+                  const currencyUsedPercentage = currencyBudget.allocated > 0 
+                    ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+                    : 0;
+                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+                  
+                  const currencySymbols: Record<string, string> = {
+                    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                    JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                  };
+                  const symbol = currencySymbols[currency] || currency;
+                  
+                  return (
+                    <div key={currency} className="space-y-0.5">
+                      <div className="flex justify-between items-center text-[9px]">
+                        <span className="text-muted-foreground">{currency} {symbol}:</span>
+                        <span className={cn(
+                          "font-semibold",
+                          currencyIsOverBudget ? "text-destructive" : "text-foreground"
+                        )}>
+                          {currencyUsedPercentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      <Progress 
+                        value={Math.min(currencyUsedPercentage, 100)} 
+                        className={cn(
+                          "h-1 rounded-full",
+                          currencyIsOverBudget && "bg-destructive/20"
+                        )}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="relative mb-1">
+                <Progress 
+                  value={Math.min(usedPercentage, 100)} 
+                  className={cn(
+                    "h-1.5 rounded-full",
+                    isOverBudget && "bg-destructive/20"
+                  )}
+                />
+              </div>
+            )}
             
             {/* Суммы */}
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold">{formatAmount(budget.spent)}</span>
-              <span className="text-muted-foreground">из {formatAmount(budget.allocated)}</span>
-            </div>
+            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
+              // Multiple currencies - show separate amounts
+              <div className="space-y-1">
+                {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
+                  const currencySymbols: Record<string, string> = {
+                    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                    JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                  };
+                  const symbol = currencySymbols[currency] || currency;
+                  
+                  return (
+                    <div key={currency} className="flex items-center justify-between text-[10px]">
+                      <span className="font-semibold">
+                        {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
+                      </span>
+                      <span className="text-muted-foreground">
+                        из {currencyBudget.allocated.toLocaleString('ru-RU')} {symbol}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // Single currency - show standard view
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold">{formatAmount(budget.spent)}</span>
+                <span className="text-muted-foreground">из {formatAmount(budget.allocated)}</span>
+              </div>
+            )}
             
             {/* Перенос остатка из предыдущего месяца */}
             {budget.carryOver && budget.carryOver > 0 ? (
@@ -155,22 +218,65 @@ export function CategoryCard({
           
           {/* Процент */}
           <div className="text-right shrink-0">
-            <div className={cn(
-              "text-lg font-bold",
-              isOverBudget ? "text-destructive" : "text-foreground"
-            )}>
-              {usedPercentage.toFixed(0)}%
-            </div>
-            {!isOverBudget && remaining > 0 ? (
-              <div className="text-[10px] text-success font-medium">
-                {formatAmount(remaining)}
+            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
+              // Multiple currencies - show percentages for each
+              <div className="space-y-1">
+                {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
+                  const currencyUsedPercentage = currencyBudget.allocated > 0 
+                    ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+                    : 0;
+                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+                  const currencyRemaining = currencyBudget.allocated - currencyBudget.spent;
+                  
+                  const currencySymbols: Record<string, string> = {
+                    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                    JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                  };
+                  const symbol = currencySymbols[currency] || currency;
+                  
+                  return (
+                    <div key={currency} className="space-y-0.5">
+                      <div className={cn(
+                        "text-sm font-bold",
+                        currencyIsOverBudget ? "text-destructive" : "text-foreground"
+                      )}>
+                        {currencyUsedPercentage.toFixed(0)}%
+                      </div>
+                      {!currencyIsOverBudget && currencyRemaining > 0 ? (
+                        <div className="text-[9px] text-success font-medium">
+                          {currencyRemaining.toLocaleString('ru-RU')} {symbol}
+                        </div>
+                      ) : null}
+                      {currencyIsOverBudget ? (
+                        <div className="text-[9px] text-destructive font-medium">
+                          +{Math.abs(currencyRemaining).toLocaleString('ru-RU')} {symbol}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
-            ) : null}
-            {isOverBudget ? (
-              <div className="text-[10px] text-destructive font-medium">
-                +{formatAmount(Math.abs(remaining))}
-              </div>
-            ) : null}
+            ) : (
+              // Single currency - show standard view
+              <>
+                <div className={cn(
+                  "text-lg font-bold",
+                  isOverBudget ? "text-destructive" : "text-foreground"
+                )}>
+                  {usedPercentage.toFixed(0)}%
+                </div>
+                {!isOverBudget && remaining > 0 ? (
+                  <div className="text-[10px] text-success font-medium">
+                    {formatAmount(remaining)}
+                  </div>
+                ) : null}
+                {isOverBudget ? (
+                  <div className="text-[10px] text-destructive font-medium">
+                    +{formatAmount(Math.abs(remaining))}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
           
           {/* Кнопки */}
@@ -255,16 +361,45 @@ export function CategoryCard({
 
       {/* Суммы */}
       <div className="space-y-2 mb-3">
-        <div className="flex justify-between items-center text-xs">
-          <div>
-            <span className="text-muted-foreground">Потрачено: </span>
-            <span className="font-bold">{formatAmount(budget.spent)}</span>
+        {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
+          // Multiple currencies - show separate amounts for each
+          Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
+            const currencySymbols: Record<string, string> = {
+              RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+              JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+            };
+            const symbol = currencySymbols[currency] || currency;
+            
+            return (
+              <div key={currency} className="flex justify-between items-center text-xs">
+                <div>
+                  <span className="text-muted-foreground">{currency} {symbol} Потрачено: </span>
+                  <span className="font-bold">
+                    {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">из </span>
+                  <span className="font-semibold">
+                    {currencyBudget.allocated.toLocaleString('ru-RU')} {symbol}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          // Single currency - show standard view
+          <div className="flex justify-between items-center text-xs">
+            <div>
+              <span className="text-muted-foreground">Потрачено: </span>
+              <span className="font-bold">{formatAmount(budget.spent)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">из </span>
+              <span className="font-semibold">{formatAmount(budget.allocated)}</span>
+            </div>
           </div>
-          <div>
-            <span className="text-muted-foreground">из </span>
-            <span className="font-semibold">{formatAmount(budget.allocated)}</span>
-          </div>
-        </div>
+        )}
 
         {/* Перенос остатка из предыдущего месяца */}
         {budget.carryOver && budget.carryOver > 0 ? (
@@ -294,26 +429,82 @@ export function CategoryCard({
         ) : null}
       </div>
 
-      {/* Прогресс-бар */}
-      <div className="space-y-1 mb-2">
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-            Использовано
-          </span>
-          <span className={cn(
-            "text-xs font-bold",
-            isOverBudget ? "text-destructive" : "text-foreground"
-          )}>
-            {usedPercentage.toFixed(0)}%
-          </span>
-        </div>
-        <Progress 
-          value={Math.min(usedPercentage, 100)} 
-          className={cn(
-            "h-2 rounded-full transition-all duration-500",
-            isOverBudget && "bg-destructive/20"
-          )}
-        />
+      {/* Прогресс-бары (мультивалютные или один) */}
+      <div className="space-y-2 mb-2">
+        {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
+          // Multiple currencies - show separate progress bars
+          Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
+            const currencyUsedPercentage = currencyBudget.allocated > 0 
+              ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+              : 0;
+            const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+            const currencyRemaining = currencyBudget.allocated - currencyBudget.spent;
+            
+            const currencySymbols: Record<string, string> = {
+              RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+              JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+            };
+            const symbol = currencySymbols[currency] || currency;
+            
+            return (
+              <div key={currency} className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                    {currency} {symbol}
+                  </span>
+                  <span className={cn(
+                    "text-xs font-bold",
+                    currencyIsOverBudget ? "text-destructive" : "text-foreground"
+                  )}>
+                    {currencyUsedPercentage.toFixed(0)}%
+                  </span>
+                </div>
+                <Progress 
+                  value={Math.min(currencyUsedPercentage, 100)} 
+                  className={cn(
+                    "h-2 rounded-full transition-all duration-500",
+                    currencyIsOverBudget && "bg-destructive/20"
+                  )}
+                />
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-muted-foreground">
+                    {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
+                  </span>
+                  <span className="text-muted-foreground">
+                    из {currencyBudget.allocated.toLocaleString('ru-RU')} {symbol}
+                  </span>
+                </div>
+                {currencyIsOverBudget && (
+                  <div className="text-[10px] text-destructive font-medium">
+                    Превышен на {Math.abs(currencyRemaining).toLocaleString('ru-RU')} {symbol}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        ) : (
+          // Single currency - show one progress bar (backward compatibility)
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                Использовано
+              </span>
+              <span className={cn(
+                "text-xs font-bold",
+                isOverBudget ? "text-destructive" : "text-foreground"
+              )}>
+                {usedPercentage.toFixed(0)}%
+              </span>
+            </div>
+            <Progress 
+              value={Math.min(usedPercentage, 100)} 
+              className={cn(
+                "h-2 rounded-full transition-all duration-500",
+                isOverBudget && "bg-destructive/20"
+              )}
+            />
+          </div>
+        )}
       </div>
 
       {/* Предупреждение о превышении */}
@@ -336,6 +527,13 @@ export function CategoryCard({
             const source = incomeSources.find(s => s.id === alloc.incomeSourceId);
             if (!source) return null;
             
+            const currencySymbols: Record<string, string> = {
+              RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+              JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+            };
+            const allocCurrency = alloc.currency || userCurrency || 'RUB';
+            const symbol = currencySymbols[allocCurrency] || allocCurrency;
+            
             return (
               <div 
                 key={idx} 
@@ -348,7 +546,7 @@ export function CategoryCard({
                 <span className="text-foreground flex-1 truncate font-medium">{source.name}</span>
                 <span className="font-semibold shrink-0 text-foreground">
                   {alloc.allocationType === 'amount' 
-                    ? formatAmount(alloc.allocationValue)
+                    ? `${alloc.allocationValue.toLocaleString('ru-RU')} ${symbol}`
                     : `${alloc.allocationValue}%`}
                 </span>
               </div>
