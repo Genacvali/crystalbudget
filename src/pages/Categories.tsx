@@ -5,9 +5,10 @@ import { Plus, ArrowUpDown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CategoryCard } from "@/components/CategoryCard";
 import { CategoryDialog } from "@/components/CategoryDialog";
-import { Category, IncomeSource, CategoryBudget } from "@/types/budget";
+import { Category, IncomeSource, CategoryBudget, CategoryAllocation } from "@/types/budget";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useCurrency } from "@/hooks/useCurrency";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
@@ -24,14 +25,15 @@ const Categories = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
   const { user } = useAuth();
+  const { currency: userCurrency } = useCurrency();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<Category | undefined>();
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
-  const [expenses, setExpenses] = useState<Array<{ category_id: string; amount: number }>>([]);
-  const [incomes, setIncomes] = useState<Array<{ source_id: string; amount: number }>>([]);
+  const [expenses, setExpenses] = useState<Array<{ category_id: string; amount: number; currency?: string }>>([]);
+  const [incomes, setIncomes] = useState<Array<{ source_id: string; amount: number; currency?: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<"name" | "spent" | "remaining">("name");
   const [categoryDebts, setCategoryDebts] = useState<Record<string, number>>({});
@@ -59,7 +61,7 @@ const Categories = () => {
       
       const { data: incomesData, error: incomesError } = await supabase
         .from('incomes')
-        .select('source_id, amount')
+        .select('source_id, amount, currency')
         .gte('date', startOfMonth)
         .lte('date', endOfMonth);
       
@@ -112,10 +114,10 @@ const Categories = () => {
 
       if (allocationsError) throw allocationsError;
 
-      // Load expenses for current month
+      // Load expenses for current month (include currency)
       const { data: expensesData, error: expensesError } = await supabase
         .from('expenses')
-        .select('category_id, amount')
+        .select('category_id, amount, currency')
         .gte('date', startOfMonth)
         .lte('date', endOfMonth);
 
@@ -345,54 +347,127 @@ const Categories = () => {
   };
 
   const getCategoryBudget = (category: Category): CategoryBudget => {
-    let allocated = 0;
+    // Group expenses by currency
+    const expensesByCurrency: Record<string, number> = {};
+    const categoryExpenses = expenses.filter(exp => exp.category_id === category.id);
+    
+    categoryExpenses.forEach(exp => {
+      const expCurrency = exp.currency || userCurrency || 'RUB';
+      expensesByCurrency[expCurrency] = (expensesByCurrency[expCurrency] || 0) + Number(exp.amount);
+    });
+    
+    // Calculate budgets by currency
+    const budgetsByCurrency: Record<string, {
+      allocated: number;
+      spent: number;
+      remaining: number;
+      debt?: number;
+      carryOver?: number;
+    }> = {};
+    
+    // Group allocations by currency
+    const allocationsByCurrency: Record<string, CategoryAllocation[]> = {};
     
     if (category.allocations && category.allocations.length > 0) {
-      // Calculate total from all allocations
       category.allocations.forEach(alloc => {
+        const allocCurrency = alloc.currency || userCurrency || 'RUB';
+        if (!allocationsByCurrency[allocCurrency]) {
+          allocationsByCurrency[allocCurrency] = [];
+        }
+        allocationsByCurrency[allocCurrency].push(alloc);
+      });
+    } else {
+      // Legacy support - use user's currency
+      const defaultCurrency = userCurrency || 'RUB';
+      allocationsByCurrency[defaultCurrency] = [];
+    }
+    
+    // Calculate allocated budget for each currency
+    Object.keys(allocationsByCurrency).forEach(currency => {
+      let allocated = 0;
+      allocationsByCurrency[currency].forEach(alloc => {
         if (alloc.allocationType === 'amount') {
           allocated += alloc.allocationValue;
         } else if (alloc.allocationType === 'percent') {
-          // Use actual source income if present, else fall back to expected source amount
-          const sourceIncomes = incomes.filter(inc => inc.source_id === alloc.incomeSourceId);
+          // Filter incomes by currency and source
+          const sourceIncomes = incomes.filter(inc => 
+            inc.source_id === alloc.incomeSourceId && 
+            (inc.currency || userCurrency || 'RUB') === currency
+          );
           const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
           const expectedSourceAmount = incomeSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
           const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
           allocated += base * alloc.allocationValue / 100;
         }
       });
-    } else {
-      // Legacy support
-      if (category.allocationAmount) {
-        allocated = category.allocationAmount;
-      } else if (category.linkedSourceId && category.allocationPercent) {
-        const sourceIncomes = incomes.filter(inc => inc.source_id === category.linkedSourceId);
-        const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
-        const expectedSourceAmount = incomeSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
-        const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
-        allocated = base * category.allocationPercent / 100;
+      
+      // Legacy support - if no allocations, use legacy fields
+      if (allocationsByCurrency[currency].length === 0) {
+        if (category.allocationAmount) {
+          allocated = category.allocationAmount;
+        } else if (category.linkedSourceId && category.allocationPercent) {
+          const sourceIncomes = incomes.filter(inc => 
+            inc.source_id === category.linkedSourceId &&
+            (inc.currency || userCurrency || 'RUB') === currency
+          );
+          const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+          const expectedSourceAmount = incomeSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
+          const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+          allocated = base * category.allocationPercent / 100;
+        }
       }
-    }
-
-    // Calculate spent amount from expenses
-    const spent = expenses
-      .filter(expense => expense.category_id === category.id)
-      .reduce((sum, expense) => sum + Number(expense.amount), 0);
-
-    // Get debt and carry-over from previous month
-    const debt = categoryDebts[category.id] || 0;
-    const carryOver = categoryCarryOvers[category.id] || 0;
+      
+      const spent = expensesByCurrency[currency] || 0;
+      // Note: debts and carryOvers are not currency-specific in current implementation
+      // They would need to be stored per currency to be fully accurate
+      const debt = 0; // categoryDebts[category.id] || 0; // TODO: make currency-specific
+      const carryOver = 0; // categoryCarryOvers[category.id] || 0; // TODO: make currency-specific
+      const totalAllocated = allocated + carryOver;
+      
+      budgetsByCurrency[currency] = {
+        allocated: totalAllocated,
+        spent,
+        remaining: totalAllocated - spent - debt,
+        debt,
+        carryOver
+      };
+    });
     
-    // Add carry-over to allocated budget
-    const totalAllocated = allocated + carryOver;
+    // Also add currencies that have expenses but no allocations
+    Object.keys(expensesByCurrency).forEach(currency => {
+      if (!budgetsByCurrency[currency]) {
+        budgetsByCurrency[currency] = {
+          allocated: 0,
+          spent: expensesByCurrency[currency],
+          remaining: -expensesByCurrency[currency],
+          debt: 0,
+          carryOver: 0
+        };
+      }
+    });
+    
+    // Calculate total (for backward compatibility)
+    let totalAllocated = 0;
+    let totalSpent = 0;
+    Object.values(budgetsByCurrency).forEach(budget => {
+      totalAllocated += budget.allocated;
+      totalSpent += budget.spent;
+    });
+    
+    const totalDebt = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.debt || 0), 0);
+    const totalCarryOver = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.carryOver || 0), 0);
+    
+    const currenciesCount = Object.keys(budgetsByCurrency).length;
+    const hasMultipleCurrencies = currenciesCount > 1;
     
     return {
       categoryId: category.id,
-      allocated: totalAllocated, // Include carry-over in allocated
-      spent, // Current month spending only
-      remaining: totalAllocated - spent - debt, // Add carry-over, subtract debt
-      debt, // Debt from previous month
-      carryOver // Positive balance from previous month
+      allocated: totalAllocated,
+      spent: totalSpent,
+      remaining: totalAllocated - totalSpent - totalDebt,
+      debt: totalDebt,
+      carryOver: totalCarryOver,
+      budgetsByCurrency: hasMultipleCurrencies ? budgetsByCurrency : undefined
     };
   };
 

@@ -160,13 +160,20 @@ const Dashboard = () => {
       } = await supabase.from('category_allocations').select('*');
       if (allocationsError) throw allocationsError;
       const mappedCategories: Category[] = (categoriesData || []).map(item => {
-        const categoryAllocations = (allocationsData || []).filter(alloc => alloc.category_id === item.id).map(alloc => ({
-          id: alloc.id,
-          incomeSourceId: alloc.income_source_id,
-          allocationType: alloc.allocation_type as 'amount' | 'percent',
-          allocationValue: Number(alloc.allocation_value),
-          currency: alloc.currency || 'RUB'
-        }));
+        const categoryAllocations = (allocationsData || []).filter(alloc => alloc.category_id === item.id).map(alloc => {
+          const currency = alloc.currency || 'RUB';
+          // Debug: log currency for categories with multiple currencies
+          if (item.name === 'Красота' || item.name === 'просто так') {
+            console.log(`Category ${item.name} allocation: currency=${currency}, value=${alloc.allocation_value}`);
+          }
+          return {
+            id: alloc.id,
+            incomeSourceId: alloc.income_source_id,
+            allocationType: alloc.allocation_type as 'amount' | 'percent',
+            allocationValue: Number(alloc.allocation_value),
+            currency: currency
+          };
+        });
         return {
           id: item.id,
           name: item.name,
@@ -601,6 +608,12 @@ const Dashboard = () => {
           }
           allocationsByCurrency[allocCurrency].push(alloc);
         });
+        
+        // Debug: log currencies for categories with multiple currencies
+        const currencies = Object.keys(allocationsByCurrency);
+        if (currencies.length > 1) {
+          console.log(`Category ${category.name} has ${currencies.length} currencies:`, currencies);
+        }
       } else {
         // Legacy support - use user's currency
         const defaultCurrency = userCurrency || 'RUB';
@@ -680,6 +693,14 @@ const Dashboard = () => {
       const totalDebt = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.debt || 0), 0);
       const totalCarryOver = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.carryOver || 0), 0);
       
+      const currenciesCount = Object.keys(budgetsByCurrency).length;
+      const hasMultipleCurrencies = currenciesCount > 1;
+      
+      // Debug: log if category should show multiple currencies
+      if (hasMultipleCurrencies) {
+        console.log(`Category ${category.name} has ${currenciesCount} currencies in budgetsByCurrency:`, Object.keys(budgetsByCurrency));
+      }
+      
       return {
         categoryId: category.id,
         allocated: totalAllocated,
@@ -687,7 +708,7 @@ const Dashboard = () => {
         remaining: totalAllocated - totalSpent - totalDebt,
         debt: totalDebt,
         carryOver: totalCarryOver,
-        budgetsByCurrency: Object.keys(budgetsByCurrency).length > 1 ? budgetsByCurrency : undefined
+        budgetsByCurrency: hasMultipleCurrencies ? budgetsByCurrency : undefined
       };
     });
   };
