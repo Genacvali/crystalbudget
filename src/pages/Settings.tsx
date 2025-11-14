@@ -637,20 +637,34 @@ const Settings = () => {
   };
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    // Ignore "Auth session missing" error as it means user is already logged out
-    if (error && !error.message.includes('Auth session missing')) {
-      toast({
-        variant: "destructive",
-        title: "Ошибка выхода",
-        description: error.message,
-      });
-    } else {
+    try {
+      // First sign out
+      const { error } = await supabase.auth.signOut();
+      
+      // Ignore "Auth session missing" error as it means user is already logged out
+      if (error && !error.message.includes('Auth session missing')) {
+        toast({
+          variant: "destructive",
+          title: "Ошибка выхода",
+          description: error.message,
+        });
+        return;
+      }
+      
+      // Wait a bit to ensure session is cleared
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       toast({
         title: "Вы вышли из системы",
         description: "До встречи!",
       });
-      navigate("/auth");
+      
+      // Force reload to clear any cached state
+      window.location.href = "/auth";
+    } catch (err) {
+      console.error('Logout error:', err);
+      // Force redirect anyway
+      window.location.href = "/auth";
     }
   };
 
