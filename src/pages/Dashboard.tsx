@@ -564,13 +564,16 @@ const Dashboard = () => {
         debt: 0
       };
       
+      // Always include summariesByCurrency, even for single currency
+      const hasMultipleCurrencies = Object.keys(summariesByCurrency).length > 1;
+      
       return {
         sourceId: source.id,
         totalIncome: primarySummary.totalIncome,
         totalSpent: primarySummary.totalSpent,
         remaining: primarySummary.remaining,
         debt: primarySummary.debt,
-        summariesByCurrency: Object.keys(summariesByCurrency).length > 1 ? summariesByCurrency : undefined
+        summariesByCurrency: Object.keys(summariesByCurrency).length > 0 ? summariesByCurrency : undefined
       };
     });
   };

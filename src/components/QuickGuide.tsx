@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Sparkles, Wallet, FolderOpen, Link2, CheckCircle2, Plus } from "lucide-react";
+import { Sparkles, Wallet, FolderOpen, Link2, CheckCircle2, Plus, MessageSquare, Globe, Users, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { handleNumericInput } from "@/lib/numberInput";
@@ -42,7 +42,7 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
   const [selectedCategories, setSelectedCategories] = useState<Set<number>>(new Set());
   const [categoryAllocations, setCategoryAllocations] = useState<Record<number, { value: string; type: 'percent' | 'amount' }>>({});
 
-  const totalSteps = 6;
+  const totalSteps = 4;
   const progress = (step / totalSteps) * 100;
 
   const handleCreateSource = async () => {
@@ -115,7 +115,7 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         title: "Доход добавлен!",
         description: `${incomeAmount} добавлено к источнику`,
       });
-      setStep(4);
+      setStep(3);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
@@ -178,7 +178,7 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         title: "Категории созданы!",
         description: `Создано ${selectedCategories.size} категорий`,
       });
-      setStep(5);
+      setStep(4);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
@@ -239,7 +239,7 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         title: "Связывание завершено!",
         description: "Категории успешно связаны с источником дохода",
       });
-      setStep(6);
+      handleComplete();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
@@ -275,21 +275,43 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         {step === 1 && (
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-lg mb-3">Добро пожаловать в CrystalBudget! 💎</h3>
+              <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                Добро пожаловать в CrystalBudget!
+              </h3>
               <div className="bg-muted/50 rounded-lg p-4 space-y-3 text-sm">
                 <p className="text-muted-foreground">
-                  CrystalBudget — это умный инструмент для управления личными финансами.
+                  Умный помощник для управления финансами с поддержкой мультивалютности и Telegram ботом.
                 </p>
-                <div className="space-y-2">
-                  <p className="font-medium">Основной функционал:</p>
-                  <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-2">
-                    <li><span className="font-medium">Источники дохода</span> — создавайте источники и фиксируйте поступления денег</li>
-                    <li><span className="font-medium">Категории расходов</span> — группируйте траты и контролируйте бюджет</li>
-                    <li><span className="font-medium">Распределение бюджета</span> — привязывайте категории к источникам и задавайте лимиты</li>
-                    <li><span className="font-medium">Отслеживание баланса</span> — смотрите остатки и переносите их между месяцами</li>
-                    <li><span className="font-medium">Аналитика</span> — графики и отчеты по вашим финансам</li>
-                    <li><span className="font-medium">Telegram бот</span> — добавляйте транзакции и сканируйте чеки прямо из мессенджера 🤖</li>
-                  </ul>
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <div className="flex items-start gap-2">
+                    <MessageSquare className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-xs">Telegram бот</p>
+                      <p className="text-xs text-muted-foreground">Текст, голос, фото чека</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Globe className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-xs">Мультивалютность</p>
+                      <p className="text-xs text-muted-foreground">RUB, USD, EUR и др.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Users className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-xs">Семейный бюджет</p>
+                      <p className="text-xs text-muted-foreground">Общие финансы</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Zap className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-xs">AI помощник</p>
+                      <p className="text-xs text-muted-foreground">Советы и аналитика</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -351,52 +373,11 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
         {step === 3 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-primary mb-2">
-              <Plus className="h-5 w-5" />
-              <h3 className="font-semibold">Добавьте доход в источник</h3>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Укажите сколько денег вы получили из источника "{sourceName}"
-            </p>
-            <div className="space-y-3">
-              <div>
-                <Label htmlFor="income-amount">Сумма</Label>
-                <Input
-                  id="income-amount"
-                  inputMode="decimal"
-                  placeholder="50000"
-                  value={incomeAmount}
-                  onChange={(e) => handleNumericInput(e.target.value, setIncomeAmount)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="income-date">Дата</Label>
-                <Input
-                  id="income-date"
-                  type="date"
-                  value={incomeDate}
-                  onChange={(e) => setIncomeDate(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 pt-4">
-              <Button variant="outline" onClick={() => setStep(2)} className="flex-1">
-                Назад
-              </Button>
-              <Button onClick={handleAddIncome} disabled={loading} className="flex-1">
-                Далее
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-primary mb-2">
               <FolderOpen className="h-5 w-5" />
-              <h3 className="font-semibold">Выберите категории расходов</h3>
+              <h3 className="font-semibold">Создайте категории расходов</h3>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Категории помогут вам отслеживать на что вы тратите деньги
+              Выберите категории, которые вы используете чаще всего. Остальные можно добавить позже.
             </p>
             <div className="grid grid-cols-2 gap-2">
               {CATEGORY_PRESETS.map((preset, index) => (
@@ -412,99 +393,57 @@ export function QuickGuide({ open, onOpenChange, onComplete, userId }: QuickGuid
               ))}
             </div>
             <div className="flex gap-2 pt-4">
-              <Button variant="outline" onClick={() => setStep(3)} className="flex-1">
+              <Button variant="outline" onClick={() => setStep(2)} className="flex-1">
                 Назад
               </Button>
-              <Button onClick={handleCreateCategories} disabled={loading} className="flex-1">
-                Далее
+              <Button onClick={handleCreateCategories} disabled={loading || selectedCategories.size === 0} className="flex-1">
+                {selectedCategories.size === 0 ? 'Выберите категории' : 'Создать'}
               </Button>
             </div>
           </div>
         )}
 
-        {step === 5 && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-primary mb-2">
-              <Link2 className="h-5 w-5" />
-              <h3 className="font-semibold">Распределите бюджет</h3>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Укажите процент или фиксированную сумму для каждой категории из "{sourceName}"
-            </p>
-            <div className="space-y-3 max-h-[300px] overflow-y-auto">
-              {Array.from(selectedCategories).map(index => {
-                const allocation = categoryAllocations[index];
-                const allocationType = allocation?.type || 'percent';
-                
-                return (
-                  <div key={index} className="space-y-2 p-3 border rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">{CATEGORY_PRESETS[index].icon}</span>
-                      <span className="flex-1 font-medium">{CATEGORY_PRESETS[index].name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Select 
-                        value={allocationType} 
-                        onValueChange={(value: 'percent' | 'amount') => {
-                          handleAllocationChange(index, allocation?.value || "", value);
-                        }}
-                      >
-                        <SelectTrigger className="w-28">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="percent">Процент</SelectItem>
-                          <SelectItem value="amount">Сумма</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <div className="flex items-center gap-1 flex-1">
-                        <Input
-                          inputMode="decimal"
-                          placeholder={allocationType === 'percent' ? "10" : "5000"}
-                          value={allocation?.value || ""}
-                          onChange={(e) => handleNumericInput(e.target.value, (val) => handleAllocationChange(index, val, allocationType))}
-                          className="text-right"
-                          min="0"
-                          max={allocationType === 'percent' ? "100" : undefined}
-                        />
-                        <span className="text-muted-foreground w-8">
-                          {allocationType === 'percent' ? '%' : '₽'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex gap-2 pt-4">
-              <Button variant="outline" onClick={() => setStep(4)} className="flex-1">
-                Назад
-              </Button>
-              <Button onClick={handleLinkCategories} disabled={loading} className="flex-1">
-                Далее
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {step === 6 && (
+        {step === 4 && (
           <div className="space-y-4 text-center py-6">
             <div className="flex justify-center mb-4">
               <CheckCircle2 className="h-16 w-16 text-success" />
             </div>
-            <h3 className="text-2xl font-bold">Готово!</h3>
-            <p className="text-muted-foreground">
-              Вы успешно создали свой первый источник дохода и категории расходов.
-              Теперь вы можете начать отслеживать свой бюджет!
+            <h3 className="text-2xl font-bold">Готово! 🎉</h3>
+            <p className="text-muted-foreground mb-4">
+              Базовые настройки завершены. Теперь вы можете начать использовать CrystalBudget!
             </p>
-            <div className="bg-muted/50 rounded-lg p-4 mt-4 space-y-2 text-sm text-left">
-              <p className="font-semibold">Что дальше?</p>
-              <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                <li>Добавляйте доходы и расходы через кнопки на главной странице</li>
-                <li>Создавайте дополнительные источники дохода и категории</li>
-                <li>Подключите Telegram бот для быстрого добавления транзакций 🤖</li>
-                <li>Отслеживайте свой баланс и статистику</li>
-              </ul>
+            <div className="bg-muted/50 rounded-lg p-4 mt-4 space-y-3 text-sm text-left">
+              <p className="font-semibold mb-2">Что дальше?</p>
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-primary">💸</span>
+                  <div>
+                    <p className="font-medium">Добавляйте транзакции</p>
+                    <p className="text-xs text-muted-foreground">Через кнопки на главной или Telegram бот</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-primary">🌍</span>
+                  <div>
+                    <p className="font-medium">Мультивалютность</p>
+                    <p className="text-xs text-muted-foreground">Настройте бюджеты в разных валютах</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-primary">🤖</span>
+                  <div>
+                    <p className="font-medium">Telegram бот</p>
+                    <p className="text-xs text-muted-foreground">Текст, голос, фото чека — все работает!</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-primary">👨‍👩‍👧</span>
+                  <div>
+                    <p className="font-medium">Семейный бюджет</p>
+                    <p className="text-xs text-muted-foreground">Пригласите членов семьи в Настройках</p>
+                  </div>
+                </div>
+              </div>
             </div>
             <Button onClick={handleComplete} className="w-full mt-6">
               Начать пользоваться

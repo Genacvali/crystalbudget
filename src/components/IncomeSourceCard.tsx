@@ -176,20 +176,38 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
             ) : (
               // Single currency - show standard view
               <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Получено</p>
-                    <p className="text-base font-bold text-success break-words">
-                      {formatAmount(summary.totalIncome)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Потрачено</p>
-                    <p className="text-base font-bold text-destructive break-words">
-                      {formatAmount(summary.totalSpent)}
-                    </p>
-                  </div>
-                </div>
+                {(() => {
+                  // Get currency from summariesByCurrency if available, otherwise use user default
+                  const currency = summary.summariesByCurrency 
+                    ? Object.keys(summary.summariesByCurrency)[0]
+                    : null;
+                  const currencySymbols: Record<string, string> = {
+                    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                    JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                  };
+                  const symbol = currency ? (currencySymbols[currency] || currency) : null;
+                  
+                  return (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Получено</p>
+                        <p className="text-base font-bold text-success break-words">
+                          {currency && symbol
+                            ? `${summary.totalIncome.toLocaleString('ru-RU')} ${symbol}`
+                            : formatAmount(summary.totalIncome)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Потрачено</p>
+                        <p className="text-base font-bold text-destructive break-words">
+                          {currency && symbol
+                            ? `${summary.totalSpent.toLocaleString('ru-RU')} ${symbol}`
+                            : formatAmount(summary.totalSpent)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
@@ -211,40 +229,71 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                 </div>
                 
                 {/* Показываем превышение если есть */}
-                {isOverSpent && (
-                  <div className="flex items-center gap-2 p-2 bg-destructive/15 rounded border border-destructive/30">
-                    <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-destructive">
-                        Превышен на {formatAmount(summary.totalSpent - summary.totalIncome)}
-                      </p>
+                {isOverSpent && (() => {
+                  const currency = summary.summariesByCurrency 
+                    ? Object.keys(summary.summariesByCurrency)[0]
+                    : null;
+                  const currencySymbols: Record<string, string> = {
+                    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                    JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                  };
+                  const symbol = currency ? (currencySymbols[currency] || currency) : null;
+                  const overAmount = summary.totalSpent - summary.totalIncome;
+                  
+                  return (
+                    <div className="flex items-center gap-2 p-2 bg-destructive/15 rounded border border-destructive/30">
+                      <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-destructive">
+                          Превышен на {currency && symbol
+                            ? `${overAmount.toLocaleString('ru-RU')} ${symbol}`
+                            : formatAmount(overAmount)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 <div className="pt-2 border-t">
-                  <div className="flex items-center justify-between">
-                    <span className={cn(
-                      "text-xs font-medium",
-                      hasDebt ? "text-destructive" : "text-success"
-                    )}>
-                      {hasDebt ? "Долг после распределения" : "Остаток после распределения"}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <TrendingUp className={cn(
-                        "h-3 w-3 flex-shrink-0",
-                        hasDebt ? "text-destructive rotate-180" : "text-success"
-                      )} />
-                      <span className={cn(
-                        "text-base font-bold break-words",
-                        hasDebt ? "text-destructive" : "text-success"
-                      )}>
-                        {hasDebt
-                          ? formatAmount(summary.debt)
-                          : formatAmount(summary.remaining)}
-                      </span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const currency = summary.summariesByCurrency 
+                      ? Object.keys(summary.summariesByCurrency)[0]
+                      : null;
+                    const currencySymbols: Record<string, string> = {
+                      RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                      JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                    };
+                    const symbol = currency ? (currencySymbols[currency] || currency) : null;
+                    
+                    return (
+                      <div className="flex items-center justify-between">
+                        <span className={cn(
+                          "text-xs font-medium",
+                          hasDebt ? "text-destructive" : "text-success"
+                        )}>
+                          {hasDebt ? "Долг после распределения" : "Остаток после распределения"}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <TrendingUp className={cn(
+                            "h-3 w-3 flex-shrink-0",
+                            hasDebt ? "text-destructive rotate-180" : "text-success"
+                          )} />
+                          <span className={cn(
+                            "text-base font-bold break-words",
+                            hasDebt ? "text-destructive" : "text-success"
+                          )}>
+                            {hasDebt
+                              ? (currency && symbol
+                                  ? `${summary.debt.toLocaleString('ru-RU')} ${symbol}`
+                                  : formatAmount(summary.debt))
+                              : (currency && symbol
+                                  ? `${summary.remaining.toLocaleString('ru-RU')} ${symbol}`
+                                  : formatAmount(summary.remaining))}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </>
             )}

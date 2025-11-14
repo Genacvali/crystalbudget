@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
 import { Plus, Trash2 } from "lucide-react";
 import { handleNumericInput } from "@/lib/numberInput";
+import { supabase } from "@/integrations/supabase/client";
 
 const categorySchema = z.object({
   name: z.string().min(1, "Название обязательно").max(100),
@@ -42,6 +43,7 @@ export function CategoryDialog({
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("📁");
   const [allocations, setAllocations] = useState<CategoryAllocation[]>([]);
+  const [sourceCurrencies, setSourceCurrencies] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     if (category) {
@@ -72,13 +74,78 @@ export function CategoryDialog({
     setAllocations(allocations.filter((_, i) => i !== index));
   };
 
+  // Load currencies for income sources
+  useEffect(() => {
+    const loadSourceCurrencies = async () => {
+      if (incomeSources.length === 0) return;
+      
+      try {
+        const { data: incomes, error } = await supabase
+          .from('incomes')
+          .select('source_id, currency')
+          .in('source_id', incomeSources.map(s => s.id));
+
+        if (error) {
+          console.error('Error loading source currencies:', error);
+          return;
+        }
+
+        // Group currencies by source_id
+        const currenciesBySource: Record<string, Set<string>> = {};
+        (incomes || []).forEach(income => {
+          if (income.source_id && income.currency) {
+            if (!currenciesBySource[income.source_id]) {
+              currenciesBySource[income.source_id] = new Set();
+            }
+            currenciesBySource[income.source_id].add(income.currency);
+          }
+        });
+
+        // Convert Sets to Arrays
+        const result: Record<string, string[]> = {};
+        Object.keys(currenciesBySource).forEach(sourceId => {
+          result[sourceId] = Array.from(currenciesBySource[sourceId]);
+        });
+
+        setSourceCurrencies(result);
+      } catch (error) {
+        console.error('Error loading source currencies:', error);
+      }
+    };
+
+    loadSourceCurrencies();
+  }, [incomeSources]);
+
   const handleAllocationChange = (index: number, field: keyof CategoryAllocation, value: string | number) => {
     const newAllocations = [...allocations];
     newAllocations[index] = { ...newAllocations[index], [field]: value };
+    
+    // If source changed, update currency to match source's currencies
+    if (field === 'incomeSourceId' && value) {
+      const sourceId = value as string;
+      const sourceCurrenciesList = sourceCurrencies[sourceId] || [];
+      
+      if (sourceCurrenciesList.length > 0) {
+        // Use first currency from source, or keep current if it's in the list
+        const currentCurrency = newAllocations[index].currency || userCurrency || 'RUB';
+        if (sourceCurrenciesList.includes(currentCurrency)) {
+          // Keep current currency if it's valid for this source
+          newAllocations[index].currency = currentCurrency;
+        } else {
+          // Use first available currency from source
+          newAllocations[index].currency = sourceCurrenciesList[0];
+        }
+      } else {
+        // No incomes for this source yet, use user default
+        newAllocations[index].currency = userCurrency || 'RUB';
+      }
+    }
+    
     // Ensure currency is preserved when changing other fields
-    if (field !== 'currency' && !newAllocations[index].currency) {
+    if (field !== 'currency' && field !== 'incomeSourceId' && !newAllocations[index].currency) {
       newAllocations[index].currency = userCurrency || 'RUB';
     }
+    
     setAllocations(newAllocations);
   };
 
@@ -247,22 +314,47 @@ export function CategoryDialog({
                   <Select
                     value={allocation.currency || userCurrency || 'RUB'}
                     onValueChange={(v) => handleAllocationChange(index, 'currency', v)}
+                    disabled={!allocation.incomeSourceId}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-background z-50">
-                      <SelectItem value="RUB">₽ RUB</SelectItem>
-                      <SelectItem value="USD">$ USD</SelectItem>
-                      <SelectItem value="EUR">€ EUR</SelectItem>
-                      <SelectItem value="GBP">£ GBP</SelectItem>
-                      <SelectItem value="JPY">¥ JPY</SelectItem>
-                      <SelectItem value="CNY">¥ CNY</SelectItem>
-                      <SelectItem value="KRW">₩ KRW</SelectItem>
-                      <SelectItem value="GEL">₾ GEL</SelectItem>
-                      <SelectItem value="AMD">֏ AMD</SelectItem>
+                      {(() => {
+                        const sourceId = allocation.incomeSourceId;
+                        const availableCurrencies = sourceId && sourceCurrencies[sourceId] 
+                          ? sourceCurrencies[sourceId] 
+                          : [];
+                        
+                        const currencySymbols: Record<string, string> = {
+                          RUB: '₽', USD: '$', EUR: '€', GBP: '£',
+                          JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+                        };
+                        
+                        // If source has currencies, show only those
+                        if (availableCurrencies.length > 0) {
+                          return availableCurrencies.map(curr => (
+                            <SelectItem key={curr} value={curr}>
+                              {currencySymbols[curr] || curr} {curr}
+                            </SelectItem>
+                          ));
+                        }
+                        
+                        // If no source selected or no currencies found, show user default only
+                        const defaultCurrency = userCurrency || 'RUB';
+                        return (
+                          <SelectItem value={defaultCurrency}>
+                            {currencySymbols[defaultCurrency] || defaultCurrency} {defaultCurrency}
+                          </SelectItem>
+                        );
+                      })()}
                     </SelectContent>
                   </Select>
+                  {allocation.incomeSourceId && sourceCurrencies[allocation.incomeSourceId]?.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Для этого источника пока нет доходов. Добавьте доход, чтобы выбрать валюту.
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
