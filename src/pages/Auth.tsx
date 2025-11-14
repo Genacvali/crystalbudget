@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import { z } from "zod";
 import crystalIcon from "@/assets/crystal-icon.png";
 import { TelegramLoginButton } from "@/components/TelegramLoginButton";
+import { useTelegramWebApp } from "@/hooks/useTelegramWebApp";
 const emailSchema = z.string().email("Неверный формат email");
 const passwordSchema = z.string().min(6, "Пароль должен содержать минимум 6 символов");
 const Auth = () => {
@@ -30,6 +31,42 @@ const Auth = () => {
   const [resetEmail, setResetEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const { isInTelegram, initData, user: telegramUser } = useTelegramWebApp();
+  const [isTelegramAuthenticating, setIsTelegramAuthenticating] = useState(false);
+
+  // Auto-login via Telegram WebApp
+  useEffect(() => {
+    if (isInTelegram && initData && !isTelegramAuthenticating) {
+      setIsTelegramAuthenticating(true);
+      handleTelegramWebAppAuth(initData);
+    }
+  }, [isInTelegram, initData]);
+
+  const handleTelegramWebAppAuth = async (initData: string) => {
+    try {
+      console.log('Authenticating via Telegram WebApp...');
+      
+      const { data, error } = await supabase.functions.invoke('telegram-webapp-auth', {
+        body: { initData }
+      });
+
+      if (error) throw error;
+
+      if (data?.magic_link) {
+        // Redirect to magic link for authentication
+        window.location.href = data.magic_link;
+      }
+    } catch (error) {
+      console.error('Telegram WebApp auth error:', error);
+      setIsTelegramAuthenticating(false);
+      toast({
+        title: "Ошибка авторизации",
+        description: "Не удалось войти через Telegram",
+        variant: "destructive"
+      });
+    }
+  };
+
   useEffect(() => {
     // Check if user is coming from password reset link
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
@@ -285,6 +322,16 @@ const Auth = () => {
         </Card>
       </div>;
   }
+  
+  // Show loader when authenticating via Telegram WebApp
+  if (isTelegramAuthenticating) {
+    return <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background to-secondary/20 p-4">
+      <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+      <p className="text-lg font-medium">Вход через Telegram...</p>
+      <p className="text-sm text-muted-foreground mt-2">Подождите немного</p>
+    </div>;
+  }
+  
   if (resetMode) {
     return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary/20 p-4">
         <Card className="w-full max-w-md">
