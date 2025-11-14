@@ -154,18 +154,15 @@ const Auth = () => {
 
       if (error) throw error;
 
-      if (data?.session) {
-        // Set session
-        await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token
+      if (data?.magic_link) {
+        // Redirect to magic link for automatic login
+        toast({
+          title: "Авторизация...",
+          description: "Выполняется вход через Telegram"
         });
         
-        toast({
-          title: "Успешный вход",
-          description: "Вы вошли через Telegram"
-        });
-        navigate("/");
+        // Redirect to magic link - it will authenticate and redirect back
+        window.location.href = data.magic_link;
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Ошибка авторизации через Telegram';
@@ -174,9 +171,9 @@ const Auth = () => {
         description: errorMessage,
         variant: "destructive"
       });
-    } finally {
       setLoading(false);
     }
+    // Don't set loading to false on success - we're redirecting
   };
 
   const handlePasswordReset = async (e: React.FormEvent) => {

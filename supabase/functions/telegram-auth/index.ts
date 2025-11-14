@@ -23,35 +23,46 @@ interface TelegramUser {
 }
 
 // Verify Telegram authentication data
-function verifyTelegramAuth(telegramUser: TelegramUser): boolean {
+async function verifyTelegramAuth(telegramUser: TelegramUser): Promise<boolean> {
   const { hash, ...data } = telegramUser;
   
   // Create data-check-string
   const dataCheckArr = Object.keys(data)
+    .filter(key => data[key as keyof typeof data] !== undefined)
     .sort()
     .map(key => `${key}=${data[key as keyof typeof data]}`)
     .join('\n');
   
-  // Create secret key from bot token
-  const encoder = new TextEncoder();
-  const tokenData = encoder.encode(TELEGRAM_BOT_TOKEN);
-  const secretKey = crypto.subtle.importKey(
-    'raw',
-    tokenData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
+  console.log('Data check string:', dataCheckArr);
   
-  // Calculate hash
-  return secretKey.then(key => {
-    return crypto.subtle.sign('HMAC', key, encoder.encode(dataCheckArr));
-  }).then(signature => {
+  try {
+    // Create secret key from bot token using SHA-256 hash
+    const encoder = new TextEncoder();
+    const tokenHash = await crypto.subtle.digest('SHA-256', encoder.encode(TELEGRAM_BOT_TOKEN));
+    
+    // Import the hashed token as HMAC key
+    const secretKey = await crypto.subtle.importKey(
+      'raw',
+      tokenHash,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    // Calculate HMAC
+    const signature = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(dataCheckArr));
     const hexHash = Array.from(new Uint8Array(signature))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
+    
+    console.log('Calculated hash:', hexHash);
+    console.log('Received hash:', hash);
+    
     return hexHash === hash;
-  });
+  } catch (error) {
+    console.error('Error verifying Telegram auth:', error);
+    return false;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -147,21 +158,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Create session for the user
-    const { data: sessionData, error: sessionError } = await supabase.auth.admin.createSession({
-      user_id: userId
-    });
-
-    if (sessionError || !sessionData) {
-      console.error('Error creating session:', sessionError);
+    // Get user's email for generating auth link
+    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+    
+    if (userError || !userData) {
+      console.error('Error fetching user:', userError);
       return new Response(
-        JSON.stringify({ error: 'Failed to create session' }),
+        JSON.stringify({ error: 'Failed to fetch user' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    // Generate OTP for passwordless login
+    const { data: otpData, error: otpError } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email: userData.user.email!,
+      options: {
+        redirectTo: 'https://crystalbudget.net/'
+      }
+    });
+
+    if (otpError || !otpData) {
+      console.error('Error generating OTP link:', otpError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to generate login link' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('Generated magic link:', otpData.properties.action_link);
+
+    // Return the magic link URL - client will navigate to it for auto-login
     return new Response(
-      JSON.stringify({ session: sessionData }),
+      JSON.stringify({ 
+        magic_link: otpData.properties.action_link
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
