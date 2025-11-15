@@ -8,15 +8,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
-import { LogOut, Moon, Sun, Monitor, Users, Copy, UserPlus, Trash2 } from "lucide-react";
+import { LogOut, Moon, Sun, Monitor, Users, Copy, UserPlus, Trash2, DollarSign } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const Settings = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
+  const { currency, updateCurrency } = useCurrency();
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [family, setFamily] = useState<any>(null);
@@ -736,6 +738,47 @@ const Settings = () => {
             >
               {loading ? "Изменение..." : "Изменить пароль"}
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Валюта</CardTitle>
+            <CardDescription>Выберите валюту по умолчанию для отображения сумм</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="currency">Валюта</Label>
+              <Select 
+                value={currency} 
+                onValueChange={async (newCurrency) => {
+                  await updateCurrency(newCurrency);
+                  toast({
+                    title: "Валюта изменена",
+                    description: `Валюта по умолчанию установлена: ${newCurrency}`,
+                  });
+                }}
+              >
+                <SelectTrigger id="currency">
+                  <DollarSign className="h-4 w-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RUB">₽ RUB (Российский рубль)</SelectItem>
+                  <SelectItem value="USD">$ USD (Доллар США)</SelectItem>
+                  <SelectItem value="EUR">€ EUR (Евро)</SelectItem>
+                  <SelectItem value="GBP">£ GBP (Фунт стерлингов)</SelectItem>
+                  <SelectItem value="AMD">֏ AMD (Армянский драм)</SelectItem>
+                  <SelectItem value="GEL">₾ GEL (Грузинский лари)</SelectItem>
+                  <SelectItem value="JPY">¥ JPY (Японская иена)</SelectItem>
+                  <SelectItem value="CNY">¥ CNY (Китайский юань)</SelectItem>
+                  <SelectItem value="KRW">₩ KRW (Южнокорейская вона)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Валюта будет синхронизирована между всеми устройствами и Telegram ботом
+              </p>
+            </div>
           </CardContent>
         </Card>
 
