@@ -519,7 +519,8 @@ const Categories = () => {
     const totalCarryOver = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.carryOver || 0), 0);
     
     const currenciesCount = Object.keys(budgetsByCurrency).length;
-    const hasMultipleCurrencies = currenciesCount > 1;
+    // Always include budgetsByCurrency if there are any currencies
+    const hasCurrencies = currenciesCount > 0;
     
     return {
       categoryId: category.id,
@@ -528,7 +529,7 @@ const Categories = () => {
       remaining: totalAllocated - totalSpent - totalDebt,
       debt: totalDebt,
       carryOver: totalCarryOver,
-      budgetsByCurrency: hasMultipleCurrencies ? budgetsByCurrency : undefined
+      budgetsByCurrency: hasCurrencies ? budgetsByCurrency : undefined
     };
   };
 

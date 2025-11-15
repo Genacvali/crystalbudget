@@ -122,7 +122,7 @@ export function CategoryCard({
             </div>
             
             {/* Прогресс-бары (мультивалютные или один) */}
-            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
+            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0 ? (
               <div className="space-y-1 mb-1">
                 {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
                   const currencyUsedPercentage = currencyBudget.allocated > 0 
@@ -171,8 +171,8 @@ export function CategoryCard({
             )}
             
             {/* Суммы */}
-            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
-              // Multiple currencies - show separate amounts
+            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0 ? (
+              // Show currency-specific amounts
               <div className="space-y-1">
                 {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
                   const currencySymbols: Record<string, string> = {
@@ -218,8 +218,8 @@ export function CategoryCard({
           
           {/* Процент */}
           <div className="text-right shrink-0">
-            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
-              // Multiple currencies - show percentages for each
+            {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0 ? (
+              // Show currency-specific percentages
               <div className="space-y-1">
                 {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
                   const currencyUsedPercentage = currencyBudget.allocated > 0 
@@ -361,8 +361,8 @@ export function CategoryCard({
 
       {/* Суммы */}
       <div className="space-y-2 mb-3">
-        {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
-          // Multiple currencies - show separate amounts for each
+        {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0 ? (
+          // Show currency-specific amounts
           Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
             const currencySymbols: Record<string, string> = {
               RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -431,8 +431,8 @@ export function CategoryCard({
 
       {/* Прогресс-бары (мультивалютные или один) */}
       <div className="space-y-2 mb-2">
-        {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 1 ? (
-          // Multiple currencies - show separate progress bars
+        {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0 ? (
+          // Show currency-specific progress bars
           Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
             const currencyUsedPercentage = currencyBudget.allocated > 0 
               ? (currencyBudget.spent / currencyBudget.allocated) * 100 

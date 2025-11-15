@@ -728,10 +728,10 @@ const Dashboard = () => {
       const totalCarryOver = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.carryOver || 0), 0);
       
       const currenciesCount = Object.keys(budgetsByCurrency).length;
-      const hasMultipleCurrencies = currenciesCount > 1;
+      const hasCurrencies = currenciesCount > 0;
       
-      // Debug: log if category should show multiple currencies
-      if (hasMultipleCurrencies) {
+      // Debug: log if category has currencies
+      if (hasCurrencies) {
         console.log(`Category ${category.name} has ${currenciesCount} currencies in budgetsByCurrency:`, Object.keys(budgetsByCurrency));
       }
       
@@ -742,7 +742,7 @@ const Dashboard = () => {
         remaining: totalAllocated - totalSpent - totalDebt,
         debt: totalDebt,
         carryOver: totalCarryOver,
-        budgetsByCurrency: hasMultipleCurrencies ? budgetsByCurrency : undefined
+        budgetsByCurrency: hasCurrencies ? budgetsByCurrency : undefined
       };
     });
   };
