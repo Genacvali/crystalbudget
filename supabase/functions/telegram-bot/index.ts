@@ -341,6 +341,41 @@ async function getUserCurrency(userId) {
   return context.currency;
 }
 
+// Get currency from category allocations (first currency found)
+async function getCategoryCurrency(categoryId) {
+  try {
+    const { data: allocations, error } = await supabase
+      .from('category_allocations')
+      .select('currency')
+      .eq('category_id', categoryId);
+
+    if (error || !allocations || allocations.length === 0) {
+      return null;
+    }
+
+    // Get unique currencies
+    const currencies = new Set();
+    allocations.forEach(alloc => {
+      if (alloc.currency) {
+        currencies.add(alloc.currency);
+      }
+    });
+
+    // Return first currency or null
+    return currencies.size > 0 ? Array.from(currencies)[0] : null;
+  } catch (error) {
+    console.error('Error getting category currency:', error);
+    return null;
+  }
+}
+
+// Get currency from income source (not implemented yet, placeholder for future)
+async function getSourceCurrency(sourceId) {
+  // For now, sources don't have a specific currency
+  // This is a placeholder for future enhancement
+  return null;
+}
+
 async function getEffectiveUserIdUncached(userId) {
   // Check if user is a family owner
   const { data: ownedFamily } = await supabase
@@ -2204,8 +2239,9 @@ async function handleCallbackQuery(query) {
       await sendTelegramMessage(chatId, '❌ Ошибка получения источника');
       return;
     }
-    // Create income
-    const currency = await getUserCurrency(userId);
+    // Create income with source currency or user default
+    const sourceCurrency = await getSourceCurrency(sourceId);
+    const currency = sourceCurrency || (await getUserCurrency(userId));
     const { data: incomeData, error } = await supabase.from('incomes').insert({
       user_id: effectiveUserId,
       source_id: sourceId,
@@ -3405,7 +3441,9 @@ async function handleTextMessage(message, userId) {
     }
     const description = parts.slice(1).join(' ') || null;
     if (session.type === 'expense') {
-      const currency = await getUserCurrency(userId);
+      // Use category currency if available, otherwise user default
+      const categoryCurrency = await getCategoryCurrency(session.categoryId);
+      const currency = categoryCurrency || (await getUserCurrency(userId));
       const { data: expenseData, error } = await supabase.from('expenses').insert({
         user_id: effectiveUserId,
         amount: amount,
@@ -3454,7 +3492,9 @@ async function handleTextMessage(message, userId) {
         );
       }
     } else if (session.type === 'income') {
-      const currency = await getUserCurrency(userId);
+      // Use source currency if available, otherwise user default
+      const sourceCurrency = await getSourceCurrency(session.sourceId);
+      const currency = sourceCurrency || (await getUserCurrency(userId));
       const { data: incomeData, error} = await supabase.from('incomes').insert({
         user_id: effectiveUserId,
         amount: amount,

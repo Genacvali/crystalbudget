@@ -112,10 +112,11 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
       setAmount("");
       setDate(new Date());
       setDescription("");
+      // Reset to user default currency when closing
       setCurrency(userCurrency || 'RUB');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editingExpense?.id]);
+  }, [open, editingExpense?.id, userCurrency]);
 
   const handleSave = () => {
     try {
