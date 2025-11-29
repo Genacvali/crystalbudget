@@ -669,21 +669,25 @@ const Settings = () => {
       let familyId = null;
 
       // Check if user is a family owner
-      const { data: ownedFamily } = await supabase
+      console.log("Checking if user is family owner...");
+      const { data: ownedFamily, error: ownedFamilyError } = await supabase
         .from("families")
         .select("id")
         .eq("owner_id", user.id)
         .maybeSingle();
+      console.log("Owned family:", ownedFamily, "Error:", ownedFamilyError);
 
       if (ownedFamily?.id) {
         familyId = ownedFamily.id;
       } else {
         // Check if user is a family member
-        const { data: membership } = await supabase
+        console.log("Checking if user is family member...");
+        const { data: membership, error: membershipError } = await supabase
           .from("family_members")
           .select("family_id")
           .eq("user_id", user.id)
           .maybeSingle();
+        console.log("Membership:", membership, "Error:", membershipError);
 
         if (membership?.family_id) {
           familyId = membership.family_id;
@@ -691,18 +695,21 @@ const Settings = () => {
       }
 
       if (familyId) {
+        console.log("Found family ID:", familyId);
         // Get family owner
-        const { data: familyData } = await supabase
+        const { data: familyData, error: familyDataError } = await supabase
           .from("families")
           .select("owner_id")
           .eq("id", familyId)
           .single();
+        console.log("Family data:", familyData, "Error:", familyDataError);
 
         // Get all family members
-        const { data: members } = await supabase
+        const { data: members, error: membersError } = await supabase
           .from("family_members")
           .select("user_id")
           .eq("family_id", familyId);
+        console.log("Family members:", members, "Error:", membersError);
 
         // Include owner and all members (same logic as Dashboard)
         if (familyData?.owner_id) {
@@ -711,6 +718,8 @@ const Settings = () => {
             targetUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
           }
         }
+      } else {
+        console.log("No family found, using only current user ID");
       }
 
       console.log("Exporting data for users:", targetUserIds);
