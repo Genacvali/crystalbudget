@@ -664,54 +664,53 @@ const Settings = () => {
 
     setLoading(true);
     try {
-      // 1. Identify users to export (self + family)
+      // 1. Identify users to export (self + family) - using same logic as Dashboard
       let targetUserIds = [user.id];
       let familyId = null;
 
-      // Check if owner
+      // Check if user is a family owner
       const { data: ownedFamily } = await supabase
         .from("families")
         .select("id")
         .eq("owner_id", user.id)
         .maybeSingle();
 
-      if (ownedFamily) {
+      if (ownedFamily?.id) {
         familyId = ownedFamily.id;
       } else {
-        // Check if member
-        const { data: familyMember } = await supabase
+        // Check if user is a family member
+        const { data: membership } = await supabase
           .from("family_members")
           .select("family_id")
           .eq("user_id", user.id)
           .maybeSingle();
-        
-        if (familyMember) {
-          familyId = familyMember.family_id;
+
+        if (membership?.family_id) {
+          familyId = membership.family_id;
         }
       }
 
       if (familyId) {
-        // Get all members
-        const { data: members } = await supabase
-          .from("family_members")
-          .select("user_id")
-          .eq("family_id", familyId);
-        
-        // Get owner
-        const { data: family } = await supabase
+        // Get family owner
+        const { data: familyData } = await supabase
           .from("families")
           .select("owner_id")
           .eq("id", familyId)
           .single();
 
-        if (members) {
-          members.forEach(m => targetUserIds.push(m.user_id));
+        // Get all family members
+        const { data: members } = await supabase
+          .from("family_members")
+          .select("user_id")
+          .eq("family_id", familyId);
+
+        // Include owner and all members (same logic as Dashboard)
+        if (familyData?.owner_id) {
+          targetUserIds = [familyData.owner_id];
+          if (members && members.length > 0) {
+            targetUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
+          }
         }
-        if (family) {
-          targetUserIds.push(family.owner_id);
-        }
-        // Deduplicate
-        targetUserIds = [...new Set(targetUserIds)];
       }
 
       console.log("Exporting data for users:", targetUserIds);
@@ -720,9 +719,11 @@ const Settings = () => {
         description: `Найдено пользователей для экспорта: ${targetUserIds.length}`,
       });
 
-      // Fetch all data for these users with high limit
-      const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds).range(0, 10000);
-      const categoriesRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).range(0, 10000);
+      // Fetch all data - using same approach as Dashboard
+      // For sources and categories, RLS handles filtering (no explicit user_id filter)
+      // For transactions, use familyUserIds filter
+      const incomeSourcesRes = await supabase.from("income_sources").select("*").order("created_at", { ascending: false });
+      const categoriesRes = await supabase.from("categories").select("*").order("created_at", { ascending: false });
       const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds).range(0, 10000);
       const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds).range(0, 10000);
       
