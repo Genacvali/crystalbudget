@@ -664,26 +664,68 @@ const Settings = () => {
 
     setLoading(true);
     try {
-      // Fetch all user data including allocations
-      const incomeSourcesRes = await supabase.from("income_sources").select("*").eq("user_id", user.id);
-      const categoriesRes = await supabase.from("categories").select("*").eq("user_id", user.id);
-      const incomesRes = await supabase.from("incomes").select("*").eq("user_id", user.id);
-      const expensesRes = await supabase.from("expenses").select("*").eq("user_id", user.id);
+      // 1. Identify users to export (self + family)
+      let targetUserIds = [user.id];
+
+      // Check family membership or ownership
+      const { data: familyMember } = await supabase
+        .from("family_members")
+        .select("family_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const { data: ownedFamily } = await supabase
+        .from("families")
+        .select("id")
+        .eq("owner_id", user.id)
+        .maybeSingle();
+
+      const familyId = familyMember?.family_id || ownedFamily?.id;
+
+      if (familyId) {
+        // Get all members
+        const { data: members } = await supabase
+          .from("family_members")
+          .select("user_id")
+          .eq("family_id", familyId);
+        
+        const { data: family } = await supabase
+          .from("families")
+          .select("owner_id")
+          .eq("id", familyId)
+          .single();
+
+        if (members) {
+          members.forEach(m => targetUserIds.push(m.user_id));
+        }
+        if (family) {
+          targetUserIds.push(family.owner_id);
+        }
+        // Deduplicate
+        targetUserIds = [...new Set(targetUserIds)];
+      }
+
+      console.log("Exporting data for users:", targetUserIds);
+
+      // Fetch all data for these users
+      const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds);
+      const categoriesRes = await supabase.from("categories").select("*").in("user_id", targetUserIds);
+      const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds);
+      const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds);
       
       // Get category allocations (budget settings)
-      const categoryIds = categoriesRes.data?.map(c => c.id) || [];
+      const categories = categoriesRes.data || [];
+      const categoryIds = categories.map(c => c.id);
+      
       const allocationsRes = categoryIds.length > 0 
         ? await supabase.from("category_allocations").select("*").in("category_id", categoryIds)
         : { data: [] };
 
-      // Get profile settings
+      // Profile and preferences (only for current user)
       const profileRes = await supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
-      
-      // Get currency preference (if stored separately)
       const currencyRes = await supabase.from("user_preferences").select("currency").eq("user_id", user.id).maybeSingle();
 
       const incomeSources = incomeSourcesRes.data || [];
-      const categories = categoriesRes.data || [];
       const incomes = incomesRes.data || [];
       const expenses = expensesRes.data || [];
       const allocations = allocationsRes.data || [];
@@ -694,6 +736,7 @@ const Settings = () => {
         version: "2.0",
         exportDate: new Date().toISOString(),
         userId: user.id,
+        exportedUserIds: targetUserIds,
         userEmail: user.email,
         profile: profile,
         currency: currency,
