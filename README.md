@@ -104,4 +104,3 @@ Project Link: [https://github.com/yourusername/crystalbudget](https://github.com
 
 ---
 
-*Built with ❤️ for better financial clarity*
