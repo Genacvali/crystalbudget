@@ -749,26 +749,22 @@ const Settings = () => {
       const text = await file.text();
       const importData = JSON.parse(text);
 
-      // Validate data structure (support both old and new format)
-      const isOldFormat = importData.incomeSources && importData.categories && importData.incomes && importData.expenses;
-      const isNewFormat = importData.version && importData.incomeSources && importData.categories;
-      
-      if (!isOldFormat && !isNewFormat) {
+      // Validate data structure
+      if (!importData.incomeSources && !importData.categories) {
         throw new Error("Неверный формат файла. Ожидается файл экспорта CrystalBudget.");
       }
-
-      // Handle new format with allocations
-      const categoryAllocations = importData.categoryAllocations || [];
-      const profileData = importData.profile || null;
-      const currencyData = importData.currency || null;
 
       // Confirm import
       if (!confirm("Импорт данных заменит все существующие данные. Продолжить?")) {
         setLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
-      // Import profile and currency settings first
+      // 1. Import Profile & Currency
+      const profileData = importData.profile || null;
+      const currencyData = importData.currency || null;
+
       if (profileData) {
         await supabase
           .from("profiles")
@@ -784,239 +780,143 @@ const Settings = () => {
         await updateCurrency(currencyData);
       }
 
-      // Import income sources
+      // 2. Clear existing data
+      // First delete allocations (dependent on categories)
+      const { data: userCats } = await supabase.from("categories").select("id").eq("user_id", user.id);
+      if (userCats && userCats.length > 0) {
+        const catIds = userCats.map(c => c.id);
+        await supabase.from("category_allocations").delete().in("category_id", catIds);
+      }
+
+      // Delete expenses and incomes
+      await supabase.from("expenses").delete().eq("user_id", user.id);
+      await supabase.from("incomes").delete().eq("user_id", user.id);
+
+      // Delete categories and sources
+      await supabase.from("categories").delete().eq("user_id", user.id);
+      await supabase.from("income_sources").delete().eq("user_id", user.id);
+
+      // Maps for linking old IDs to new IDs
+      const sourceIdMap: Record<string, string> = {};
+      const categoryIdMap: Record<string, string> = {};
+
+      // 3. Import Income Sources
       if (importData.incomeSources && importData.incomeSources.length > 0) {
-        const incomeSourcesToImport = importData.incomeSources.map((source: any) => ({
+        const sourcesToInsert = importData.incomeSources.map((s: any) => ({
           user_id: user.id,
-          name: source.name,
-          icon: source.icon || '💰',
-          currency: source.currency || 'RUB',
-          zenmoney_id: source.zenmoney_id || null,
+          name: s.name,
+          icon: s.icon || '💰',
+          currency: s.currency || 'RUB',
+          zenmoney_id: s.zenmoney_id || null,
         }));
 
-        // Delete existing and insert new
-        await supabase.from("income_sources").delete().eq("user_id", user.id);
-        if (incomeSourcesToImport.length > 0) {
-          const { data: insertedSources } = await supabase
-            .from("income_sources")
-            .insert(incomeSourcesToImport)
-            .select();
-          
-          // Create mapping for incomes
-          const sourceIdMap: Record<string, string> = {};
-          if (insertedSources && importData.incomeSources) {
-            importData.incomeSources.forEach((oldSource: any, index: number) => {
-              if (insertedSources[index]) {
-                sourceIdMap[oldSource.id] = insertedSources[index].id;
-              }
-            });
-          }
+        const { data: insertedSources, error: sourceError } = await supabase
+          .from("income_sources")
+          .insert(sourcesToInsert)
+          .select();
+        
+        if (sourceError) throw new Error(`Ошибка импорта источников: ${sourceError.message}`);
+
+        if (insertedSources) {
+          insertedSources.forEach((newSource, idx) => {
+            const oldSource = importData.incomeSources[idx];
+            if (oldSource && oldSource.id) {
+              sourceIdMap[oldSource.id] = newSource.id;
+            }
+          });
         }
       }
 
-      // Import categories
+      // 4. Import Categories (with linked sources)
       if (importData.categories && importData.categories.length > 0) {
-        const categoriesToImport = importData.categories.map((category: any) => ({
+        const categoriesToInsert = importData.categories.map((c: any) => ({
           user_id: user.id,
-          name: category.name,
-          icon: category.icon || '📁',
-          linked_source_id: null, // Will need to be re-linked manually
-          allocation_amount: category.allocation_amount || null,
-          allocation_percent: category.allocation_percent || null,
-          zenmoney_id: category.zenmoney_id || null,
+          name: c.name,
+          icon: c.icon || '📁',
+          linked_source_id: c.linked_source_id ? sourceIdMap[c.linked_source_id] : null,
+          allocation_amount: c.allocation_amount,
+          allocation_percent: c.allocation_percent,
+          zenmoney_id: c.zenmoney_id || null,
         }));
 
-        // Delete existing and insert new
-        await supabase.from("categories").delete().eq("user_id", user.id);
-        if (categoriesToImport.length > 0) {
-          const { data: insertedCategories } = await supabase
-            .from("categories")
-            .insert(categoriesToImport)
-            .select();
+        const { data: insertedCategories, error: catError } = await supabase
+          .from("categories")
+          .insert(categoriesToInsert)
+          .select();
 
-          // Create a mapping of old category IDs to new ones for expenses and allocations
-          const categoryIdMap: Record<string, string> = {};
-          if (insertedCategories && importData.categories) {
-            importData.categories.forEach((oldCat: any, index: number) => {
-              if (insertedCategories[index]) {
-                categoryIdMap[oldCat.id] = insertedCategories[index].id;
-              }
-            });
-          }
+        if (catError) throw new Error(`Ошибка импорта категорий: ${catError.message}`);
 
-          // Import category allocations (budget settings)
-          if (categoryAllocations && categoryAllocations.length > 0) {
-            // First delete existing allocations for imported categories
-            const newCategoryIds = insertedCategories?.map(c => c.id) || [];
-            if (newCategoryIds.length > 0) {
-              await supabase
-                .from("category_allocations")
-                .delete()
-                .in("category_id", newCategoryIds);
+        if (insertedCategories) {
+          insertedCategories.forEach((newCat, idx) => {
+            const oldCat = importData.categories[idx];
+            if (oldCat && oldCat.id) {
+              categoryIdMap[oldCat.id] = newCat.id;
             }
-
-            // Get all imported sources for mapping
-            const { data: allNewSources } = await supabase
-              .from("income_sources")
-              .select("id, name")
-              .eq("user_id", user.id);
-
-            // Create source mapping by name
-            const sourceNameMap: Record<string, string> = {};
-            if (allNewSources && importData.incomeSources) {
-              importData.incomeSources.forEach((oldSource: any) => {
-                const matchingSource = allNewSources.find(s => s.name === oldSource.name);
-                if (matchingSource) {
-                  sourceNameMap[oldSource.name] = matchingSource.id;
-                }
-              });
-            }
-
-            // Import allocations with mapped category IDs and source IDs
-            const allocationsToImport = categoryAllocations
-              .map((alloc: any) => {
-                const newCategoryId = categoryIdMap[alloc.category_id];
-                if (!newCategoryId) return null;
-
-                // Map income_source_id if exists
-                let newSourceId = null;
-                if (alloc.income_source_id && importData.incomeSources) {
-                  const oldSource = importData.incomeSources.find((s: any) => s.id === alloc.income_source_id);
-                  if (oldSource && sourceNameMap[oldSource.name]) {
-                    newSourceId = sourceNameMap[oldSource.name];
-                  }
-                }
-
-                // Only include if source was found
-                if (alloc.income_source_id && !newSourceId) {
-                  return null; // Skip if source not found
-                }
-
-                return {
-                  category_id: newCategoryId,
-                  income_source_id: newSourceId,
-                  allocation_type: alloc.allocation_type,
-                  allocation_value: alloc.allocation_value,
-                  currency: alloc.currency || 'RUB',
-                };
-              })
-              .filter((a: any) => a !== null);
-
-            if (allocationsToImport.length > 0) {
-              await supabase.from("category_allocations").insert(allocationsToImport);
-            }
-          }
-
-          // Import expenses with mapped category IDs
-          if (importData.expenses && importData.expenses.length > 0) {
-            const expensesToImport = importData.expenses
-              .map((expense: any) => {
-                const newCategoryId = categoryIdMap[expense.category_id];
-                if (!newCategoryId) return null; // Skip if category not found
-
-                return {
-                  user_id: user.id,
-                  category_id: newCategoryId,
-                  amount: expense.amount,
-                  date: expense.date,
-                  description: expense.description || null,
-                  currency: expense.currency || 'RUB',
-                  zenmoney_id: expense.zenmoney_id || null,
-                };
-              })
-              .filter((e: any) => e !== null);
-
-            // Delete existing and insert new
-            await supabase.from("expenses").delete().eq("user_id", user.id);
-            if (expensesToImport.length > 0) {
-              await supabase.from("expenses").insert(expensesToImport);
-            }
-          }
-
-          // Import incomes
-          if (importData.incomes && importData.incomes.length > 0) {
-            // Map old source IDs to new ones
-            const sourceIdMap: Record<string, string> = {};
-            if (importData.incomeSources) {
-              const { data: newSources } = await supabase
-                .from("income_sources")
-                .select("id, name")
-                .eq("user_id", user.id);
-
-              if (newSources) {
-                importData.incomeSources.forEach((oldSource: any, index: number) => {
-                  const matchingSource = newSources.find(s => s.name === oldSource.name);
-                  if (matchingSource) {
-                    sourceIdMap[oldSource.id] = matchingSource.id;
-                  }
-                });
-              }
-            }
-
-            const incomesToImport = importData.incomes
-              .map((income: any) => {
-                const newSourceId = income.source_id ? sourceIdMap[income.source_id] : null;
-
-                return {
-                  user_id: user.id,
-                  source_id: newSourceId,
-                  amount: income.amount,
-                  date: income.date,
-                  description: income.description || null,
-                  currency: income.currency || 'RUB',
-                  zenmoney_id: income.zenmoney_id || null,
-                };
-              })
-              .filter((i: any) => i !== null);
-
-            // Delete existing and insert new
-            await supabase.from("incomes").delete().eq("user_id", user.id);
-            if (incomesToImport.length > 0) {
-              await supabase.from("incomes").insert(incomesToImport);
-            }
-          }
-        }
-      } else {
-        // If no categories, just import expenses and incomes without category/source mapping
-        if (importData.expenses && importData.expenses.length > 0) {
-          const expensesToImport = importData.expenses.map((expense: any) => ({
-            user_id: user.id,
-            category_id: expense.category_id || null,
-            amount: expense.amount,
-            date: expense.date,
-            description: expense.description || null,
-            currency: expense.currency || 'RUB',
-            zenmoney_id: expense.zenmoney_id || null,
-          }));
-
-          await supabase.from("expenses").delete().eq("user_id", user.id);
-          await supabase.from("expenses").insert(expensesToImport);
-        }
-
-        if (importData.incomes && importData.incomes.length > 0) {
-          const incomesToImport = importData.incomes.map((income: any) => ({
-            user_id: user.id,
-            source_id: income.source_id || null,
-            amount: income.amount,
-            date: income.date,
-            description: income.description || null,
-            currency: income.currency || 'RUB',
-            zenmoney_id: income.zenmoney_id || null,
-          }));
-
-          await supabase.from("incomes").delete().eq("user_id", user.id);
-          await supabase.from("incomes").insert(incomesToImport);
+          });
         }
       }
 
-      const allocationsCount = categoryAllocations?.length || 0;
+      // 5. Import Category Allocations
+      const categoryAllocations = importData.categoryAllocations || [];
+      if (categoryAllocations.length > 0) {
+        const allocationsToInsert = categoryAllocations.map((a: any) => {
+          const newCatId = categoryIdMap[a.category_id];
+          const newSourceId = a.income_source_id ? sourceIdMap[a.income_source_id] : null;
+          
+          if (!newCatId || !newSourceId) return null;
+          
+          return {
+            category_id: newCatId,
+            income_source_id: newSourceId,
+            allocation_type: a.allocation_type,
+            allocation_value: a.allocation_value,
+            currency: a.currency || 'RUB',
+          };
+        }).filter((a: any) => a !== null);
+
+        if (allocationsToInsert.length > 0) {
+          const { error: allocError } = await supabase.from("category_allocations").insert(allocationsToInsert as any);
+          if (allocError) console.error("Ошибка импорта настроек бюджета:", allocError);
+        }
+      }
+
+      // 6. Import Incomes
+      if (importData.incomes && importData.incomes.length > 0) {
+        const incomesToInsert = importData.incomes.map((inc: any) => ({
+          user_id: user.id,
+          source_id: inc.source_id ? sourceIdMap[inc.source_id] : null,
+          amount: inc.amount,
+          date: inc.date,
+          description: inc.description,
+          zenmoney_id: inc.zenmoney_id || null,
+          currency: inc.currency || 'RUB',
+        }));
+        const { error: incError } = await supabase.from("incomes").insert(incomesToInsert as any);
+        if (incError) throw new Error(`Ошибка импорта доходов: ${incError.message}`);
+      }
+
+      // 7. Import Expenses
+      if (importData.expenses && importData.expenses.length > 0) {
+        const expensesToInsert = importData.expenses.map((exp: any) => ({
+          user_id: user.id,
+          category_id: exp.category_id ? categoryIdMap[exp.category_id] : null,
+          amount: exp.amount,
+          date: exp.date,
+          description: exp.description,
+          zenmoney_id: exp.zenmoney_id || null,
+          currency: exp.currency || 'RUB',
+        }));
+        const { error: expError } = await supabase.from("expenses").insert(expensesToInsert as any);
+        if (expError) throw new Error(`Ошибка импорта расходов: ${expError.message}`);
+      }
+
       toast({
-        title: "Данные импортированы",
-        description: `Импортировано: ${importData.incomeSources?.length || 0} источников дохода, ${importData.categories?.length || 0} категорий, ${allocationsCount} настроек бюджета, ${importData.incomes?.length || 0} доходов, ${importData.expenses?.length || 0} расходов`,
+        title: "Импорт успешно завершен",
+        description: `Импортировано: ${Object.keys(sourceIdMap).length} источников, ${Object.keys(categoryIdMap).length} категорий`,
       });
 
       // Reset file input
-      event.target.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
@@ -1024,6 +924,7 @@ const Settings = () => {
         title: "Ошибка импорта",
         description: errorMessage,
       });
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
     setLoading(false);
   };
