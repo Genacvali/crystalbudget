@@ -720,11 +720,11 @@ const Settings = () => {
         description: `Найдено пользователей для экспорта: ${targetUserIds.length}`,
       });
 
-      // Fetch all data for these users
-      const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds);
-      const categoriesRes = await supabase.from("categories").select("*").in("user_id", targetUserIds);
-      const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds);
-      const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds);
+      // Fetch all data for these users with high limit
+      const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds).range(0, 10000);
+      const categoriesRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).range(0, 10000);
+      const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds).range(0, 10000);
+      const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds).range(0, 10000);
       
       // Get category allocations (budget settings)
       const categories = categoriesRes.data || [];
