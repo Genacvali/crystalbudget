@@ -775,6 +775,9 @@ const Settings = () => {
       (incomeSourcesByRefRes.data || []).forEach((src: any) => allSources.set(src.id, src));
       const incomeSources = Array.from(allSources.values());
       
+      console.log(`Total income sources after merge: ${incomeSources.length} (by user: ${incomeSourcesByUserRes.data?.length || 0}, by ref: ${incomeSourcesByRefRes.data?.length || 0})`);
+      console.log("Missing source IDs:", Array.from(sourceIds).filter(id => !allSources.has(id)));
+      
       // Fetch categories - first by user_id, then by category_id from transactions
       console.log("Fetching categories for user_ids:", targetUserIds);
       const categoriesByUserRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
@@ -784,8 +787,12 @@ const Settings = () => {
       let categoriesByRefRes = { data: [] as any[], error: null };
       if (categoryIds.size > 0) {
         const categoryIdsArray = Array.from(categoryIds);
+        console.log("Fetching categories by ID:", categoryIdsArray);
         categoriesByRefRes = await supabase.from("categories").select("*").in("id", categoryIdsArray);
         console.log("Categories by reference response:", { data: categoriesByRefRes.data?.length, error: categoriesByRefRes.error });
+        if (categoriesByRefRes.error) {
+          console.error("Error fetching categories by reference:", categoriesByRefRes.error);
+        }
       }
       
       // Merge categories (avoid duplicates)
@@ -793,6 +800,9 @@ const Settings = () => {
       (categoriesByUserRes.data || []).forEach((cat: any) => allCategories.set(cat.id, cat));
       (categoriesByRefRes.data || []).forEach((cat: any) => allCategories.set(cat.id, cat));
       const categories = Array.from(allCategories.values());
+      
+      console.log(`Total categories after merge: ${categories.length} (by user: ${categoriesByUserRes.data?.length || 0}, by ref: ${categoriesByRefRes.data?.length || 0})`);
+      console.log("Missing category IDs:", Array.from(categoryIds).filter(id => !allCategories.has(id)));
       
       // Get category allocations (budget settings)
       const categoryIdsForAllocations = categories.map(c => c.id);
