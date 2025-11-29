@@ -746,6 +746,21 @@ const Settings = () => {
       const profile = profileRes.data || null;
       const currency = currencyRes.data?.currency || null;
 
+      // Log distribution by user_id for debugging
+      const expensesByUser: Record<string, number> = {};
+      expenses.forEach((exp: any) => {
+        const uid = exp.user_id || 'unknown';
+        expensesByUser[uid] = (expensesByUser[uid] || 0) + 1;
+      });
+      const incomesByUser: Record<string, number> = {};
+      incomes.forEach((inc: any) => {
+        const uid = inc.user_id || 'unknown';
+        incomesByUser[uid] = (incomesByUser[uid] || 0) + 1;
+      });
+      console.log('Export - Expenses by user:', expensesByUser);
+      console.log('Export - Incomes by user:', incomesByUser);
+      console.log('Export - Target user IDs:', targetUserIds);
+
       const exportData = {
         version: "2.0",
         exportDate: new Date().toISOString(),
@@ -938,38 +953,75 @@ const Settings = () => {
       }
 
       // 6. Import Incomes
+      let importedIncomesCount = 0;
       if (importData.incomes && importData.incomes.length > 0) {
-        const incomesToInsert = importData.incomes.map((inc: any) => ({
-          user_id: user.id,
-          source_id: inc.source_id ? sourceIdMap[inc.source_id] : null,
-          amount: inc.amount,
-          date: inc.date,
-          description: inc.description,
-          zenmoney_id: inc.zenmoney_id || null,
-          currency: inc.currency || 'RUB',
-        }));
-        const { error: incError } = await supabase.from("incomes").insert(incomesToInsert as any);
-        if (incError) throw new Error(`Ошибка импорта доходов: ${incError.message}`);
+        console.log(`Import - Processing ${importData.incomes.length} incomes`);
+        const incomesToInsert = importData.incomes.map((inc: any) => {
+          const newSourceId = inc.source_id ? sourceIdMap[inc.source_id] : null;
+          // Log if source mapping failed
+          if (inc.source_id && !newSourceId) {
+            console.warn(`Income source mapping failed for source_id: ${inc.source_id} (original user_id: ${inc.user_id})`);
+          }
+          return {
+            user_id: user.id,
+            source_id: newSourceId,
+            amount: inc.amount,
+            date: inc.date,
+            description: inc.description || null,
+            zenmoney_id: inc.zenmoney_id || null,
+            currency: inc.currency || 'RUB',
+          };
+        });
+        const { data: insertedIncomes, error: incError } = await supabase.from("incomes").insert(incomesToInsert as any).select();
+        if (incError) {
+          console.error('Income import error:', incError);
+          throw new Error(`Ошибка импорта доходов: ${incError.message}`);
+        }
+        importedIncomesCount = insertedIncomes?.length || 0;
+        console.log(`Import - Inserted ${importedIncomesCount} incomes out of ${importData.incomes.length}`);
+        if (importedIncomesCount !== importData.incomes.length) {
+          console.warn(`Import - Some incomes were not inserted! Expected: ${importData.incomes.length}, Got: ${importedIncomesCount}`);
+        }
       }
 
       // 7. Import Expenses
+      let importedExpensesCount = 0;
       if (importData.expenses && importData.expenses.length > 0) {
-        const expensesToInsert = importData.expenses.map((exp: any) => ({
-          user_id: user.id,
-          category_id: exp.category_id ? categoryIdMap[exp.category_id] : null,
-          amount: exp.amount,
-          date: exp.date,
-          description: exp.description,
-          zenmoney_id: exp.zenmoney_id || null,
-          currency: exp.currency || 'RUB',
-        }));
-        const { error: expError } = await supabase.from("expenses").insert(expensesToInsert as any);
-        if (expError) throw new Error(`Ошибка импорта расходов: ${expError.message}`);
+        console.log(`Import - Processing ${importData.expenses.length} expenses`);
+        let mappingFailures = 0;
+        const expensesToInsert = importData.expenses.map((exp: any) => {
+          const newCategoryId = exp.category_id ? categoryIdMap[exp.category_id] : null;
+          // Log if category mapping failed
+          if (exp.category_id && !newCategoryId) {
+            mappingFailures++;
+            console.warn(`Category mapping failed for category_id: ${exp.category_id} (original user_id: ${exp.user_id})`);
+          }
+          return {
+            user_id: user.id,
+            category_id: newCategoryId,
+            amount: exp.amount,
+            date: exp.date,
+            description: exp.description || null,
+            zenmoney_id: exp.zenmoney_id || null,
+            currency: exp.currency || 'RUB',
+          };
+        });
+        console.log(`Import - Category mapping failures: ${mappingFailures} out of ${importData.expenses.length}`);
+        const { data: insertedExpenses, error: expError } = await supabase.from("expenses").insert(expensesToInsert as any).select();
+        if (expError) {
+          console.error('Expense import error:', expError);
+          throw new Error(`Ошибка импорта расходов: ${expError.message}`);
+        }
+        importedExpensesCount = insertedExpenses?.length || 0;
+        console.log(`Import - Inserted ${importedExpensesCount} expenses out of ${importData.expenses.length}`);
+        if (importedExpensesCount !== importData.expenses.length) {
+          console.warn(`Import - Some expenses were not inserted! Expected: ${importData.expenses.length}, Got: ${importedExpensesCount}`);
+        }
       }
 
       toast({
         title: "Импорт успешно завершен",
-        description: `Импортировано: ${Object.keys(sourceIdMap).length} источников, ${Object.keys(categoryIdMap).length} категорий`,
+        description: `Импортировано: ${Object.keys(sourceIdMap).length} источников, ${Object.keys(categoryIdMap).length} категорий, ${importedIncomesCount} доходов, ${importedExpensesCount} расходов`,
       });
 
       // Reset file input
