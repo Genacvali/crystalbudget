@@ -666,21 +666,29 @@ const Settings = () => {
     try {
       // 1. Identify users to export (self + family)
       let targetUserIds = [user.id];
+      let familyId = null;
 
-      // Check family membership or ownership
-      const { data: familyMember } = await supabase
-        .from("family_members")
-        .select("family_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
+      // Check if owner
       const { data: ownedFamily } = await supabase
         .from("families")
         .select("id")
         .eq("owner_id", user.id)
         .maybeSingle();
 
-      const familyId = familyMember?.family_id || ownedFamily?.id;
+      if (ownedFamily) {
+        familyId = ownedFamily.id;
+      } else {
+        // Check if member
+        const { data: familyMember } = await supabase
+          .from("family_members")
+          .select("family_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        
+        if (familyMember) {
+          familyId = familyMember.family_id;
+        }
+      }
 
       if (familyId) {
         // Get all members
@@ -689,6 +697,7 @@ const Settings = () => {
           .select("user_id")
           .eq("family_id", familyId);
         
+        // Get owner
         const { data: family } = await supabase
           .from("families")
           .select("owner_id")
@@ -706,6 +715,10 @@ const Settings = () => {
       }
 
       console.log("Exporting data for users:", targetUserIds);
+      toast({
+        title: "Экспорт данных",
+        description: `Найдено пользователей для экспорта: ${targetUserIds.length}`,
+      });
 
       // Fetch all data for these users
       const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds);
