@@ -8,11 +8,13 @@ export default defineConfig(({ mode }) => ({
     host: true,  // Listen on all network interfaces (accessible via IP)
     port: 8080,
     strictPort: false,
+    allowedHosts: ["crystalbudget.net"],
   },
   preview: {
     host: true,  // Listen on all network interfaces (accessible via IP)
     port: 8080,
     strictPort: false,
+    allowedHosts: ["crystalbudget.net"],
   },
   plugins: [react()],
   resolve: {
