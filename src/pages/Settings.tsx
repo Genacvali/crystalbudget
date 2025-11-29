@@ -714,6 +714,8 @@ const Settings = () => {
       }
 
       console.log("Exporting data for users:", targetUserIds);
+      console.log("Current user ID:", user.id);
+      console.log("Family ID:", familyId);
       toast({
         title: "Экспорт данных",
         description: `Найдено пользователей для экспорта: ${targetUserIds.length}`,
@@ -721,10 +723,21 @@ const Settings = () => {
 
       // Fetch all data for all family members
       // IMPORTANT: We need to explicitly filter by targetUserIds to get categories and sources from all family members
+      console.log("Fetching income sources for user_ids:", targetUserIds);
       const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
+      console.log("Income sources response:", { data: incomeSourcesRes.data?.length, error: incomeSourcesRes.error });
+      
+      console.log("Fetching categories for user_ids:", targetUserIds);
       const categoriesRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
+      console.log("Categories response:", { data: categoriesRes.data?.length, error: categoriesRes.error });
+      
+      console.log("Fetching incomes for user_ids:", targetUserIds);
       const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds).range(0, 10000);
+      console.log("Incomes response:", { data: incomesRes.data?.length, error: incomesRes.error });
+      
+      console.log("Fetching expenses for user_ids:", targetUserIds);
       const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds).range(0, 10000);
+      console.log("Expenses response:", { data: expensesRes.data?.length, error: expensesRes.error });
       
       // Get category allocations (budget settings)
       const categories = categoriesRes.data || [];
