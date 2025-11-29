@@ -5,12 +5,14 @@ import path from "path";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
-    host: "localhost",  // Use localhost for local development
+    host: true,  // Listen on all network interfaces (accessible via IP)
     port: 8080,
+    strictPort: false,
   },
   preview: {
-    host: "localhost",  // Use localhost for local development
+    host: true,  // Listen on all network interfaces (accessible via IP)
     port: 8080,
+    strictPort: false,
   },
   plugins: [react()],
   resolve: {
