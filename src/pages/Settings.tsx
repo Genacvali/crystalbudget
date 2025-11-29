@@ -664,23 +664,51 @@ const Settings = () => {
 
     setLoading(true);
     try {
-      // Fetch all user data
+      // Fetch all user data including allocations
       const incomeSourcesRes = await supabase.from("income_sources").select("*").eq("user_id", user.id);
       const categoriesRes = await supabase.from("categories").select("*").eq("user_id", user.id);
       const incomesRes = await supabase.from("incomes").select("*").eq("user_id", user.id);
       const expensesRes = await supabase.from("expenses").select("*").eq("user_id", user.id);
+      
+      // Get category allocations (budget settings)
+      const categoryIds = categoriesRes.data?.map(c => c.id) || [];
+      const allocationsRes = categoryIds.length > 0 
+        ? await supabase.from("category_allocations").select("*").in("category_id", categoryIds)
+        : { data: [] };
 
-      const incomeSources = incomeSourcesRes.data;
-      const categories = categoriesRes.data;
-      const incomes = incomesRes.data;
-      const expenses = expensesRes.data;
+      // Get profile settings
+      const profileRes = await supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
+      
+      // Get currency preference (if stored separately)
+      const currencyRes = await supabase.from("user_preferences").select("currency").eq("user_id", user.id).maybeSingle();
+
+      const incomeSources = incomeSourcesRes.data || [];
+      const categories = categoriesRes.data || [];
+      const incomes = incomesRes.data || [];
+      const expenses = expensesRes.data || [];
+      const allocations = allocationsRes.data || [];
+      const profile = profileRes.data || null;
+      const currency = currencyRes.data?.currency || null;
 
       const exportData = {
+        version: "2.0",
         exportDate: new Date().toISOString(),
-        incomeSources: incomeSources || [],
-        categories: categories || [],
-        incomes: incomes || [],
-        expenses: expenses || []
+        userId: user.id,
+        userEmail: user.email,
+        profile: profile,
+        currency: currency,
+        incomeSources: incomeSources,
+        categories: categories,
+        categoryAllocations: allocations,
+        incomes: incomes,
+        expenses: expenses,
+        metadata: {
+          totalIncomeSources: incomeSources.length,
+          totalCategories: categories.length,
+          totalAllocations: allocations.length,
+          totalIncomes: incomes.length,
+          totalExpenses: expenses.length,
+        }
       };
 
       // Create and download JSON file
@@ -688,15 +716,15 @@ const Settings = () => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `crystal-budget-export-${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `crystal-budget-full-export-${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
       toast({
-        title: "Данные экспортированы",
-        description: "Файл сохранен в папку загрузок",
+        title: "Полный экспорт завершен",
+        description: `Экспортировано: ${incomeSources.length} источников, ${categories.length} категорий, ${allocations.length} настроек бюджета, ${incomes.length} доходов, ${expenses.length} расходов`,
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
@@ -721,15 +749,39 @@ const Settings = () => {
       const text = await file.text();
       const importData = JSON.parse(text);
 
-      // Validate data structure
-      if (!importData.incomeSources || !importData.categories || !importData.incomes || !importData.expenses) {
+      // Validate data structure (support both old and new format)
+      const isOldFormat = importData.incomeSources && importData.categories && importData.incomes && importData.expenses;
+      const isNewFormat = importData.version && importData.incomeSources && importData.categories;
+      
+      if (!isOldFormat && !isNewFormat) {
         throw new Error("Неверный формат файла. Ожидается файл экспорта CrystalBudget.");
       }
+
+      // Handle new format with allocations
+      const categoryAllocations = importData.categoryAllocations || [];
+      const profileData = importData.profile || null;
+      const currencyData = importData.currency || null;
 
       // Confirm import
       if (!confirm("Импорт данных заменит все существующие данные. Продолжить?")) {
         setLoading(false);
         return;
+      }
+
+      // Import profile and currency settings first
+      if (profileData) {
+        await supabase
+          .from("profiles")
+          .upsert({
+            user_id: user.id,
+            full_name: profileData.full_name || null,
+          }, {
+            onConflict: 'user_id'
+          });
+      }
+
+      if (currencyData) {
+        await updateCurrency(currencyData);
       }
 
       // Import income sources
@@ -739,12 +791,26 @@ const Settings = () => {
           name: source.name,
           icon: source.icon || '💰',
           currency: source.currency || 'RUB',
+          zenmoney_id: source.zenmoney_id || null,
         }));
 
         // Delete existing and insert new
         await supabase.from("income_sources").delete().eq("user_id", user.id);
         if (incomeSourcesToImport.length > 0) {
-          await supabase.from("income_sources").insert(incomeSourcesToImport);
+          const { data: insertedSources } = await supabase
+            .from("income_sources")
+            .insert(incomeSourcesToImport)
+            .select();
+          
+          // Create mapping for incomes
+          const sourceIdMap: Record<string, string> = {};
+          if (insertedSources && importData.incomeSources) {
+            importData.incomeSources.forEach((oldSource: any, index: number) => {
+              if (insertedSources[index]) {
+                sourceIdMap[oldSource.id] = insertedSources[index].id;
+              }
+            });
+          }
         }
       }
 
@@ -768,7 +834,7 @@ const Settings = () => {
             .insert(categoriesToImport)
             .select();
 
-          // Create a mapping of old category IDs to new ones for expenses
+          // Create a mapping of old category IDs to new ones for expenses and allocations
           const categoryIdMap: Record<string, string> = {};
           if (insertedCategories && importData.categories) {
             importData.categories.forEach((oldCat: any, index: number) => {
@@ -776,6 +842,69 @@ const Settings = () => {
                 categoryIdMap[oldCat.id] = insertedCategories[index].id;
               }
             });
+          }
+
+          // Import category allocations (budget settings)
+          if (categoryAllocations && categoryAllocations.length > 0) {
+            // First delete existing allocations for imported categories
+            const newCategoryIds = insertedCategories?.map(c => c.id) || [];
+            if (newCategoryIds.length > 0) {
+              await supabase
+                .from("category_allocations")
+                .delete()
+                .in("category_id", newCategoryIds);
+            }
+
+            // Get all imported sources for mapping
+            const { data: allNewSources } = await supabase
+              .from("income_sources")
+              .select("id, name")
+              .eq("user_id", user.id);
+
+            // Create source mapping by name
+            const sourceNameMap: Record<string, string> = {};
+            if (allNewSources && importData.incomeSources) {
+              importData.incomeSources.forEach((oldSource: any) => {
+                const matchingSource = allNewSources.find(s => s.name === oldSource.name);
+                if (matchingSource) {
+                  sourceNameMap[oldSource.name] = matchingSource.id;
+                }
+              });
+            }
+
+            // Import allocations with mapped category IDs and source IDs
+            const allocationsToImport = categoryAllocations
+              .map((alloc: any) => {
+                const newCategoryId = categoryIdMap[alloc.category_id];
+                if (!newCategoryId) return null;
+
+                // Map income_source_id if exists
+                let newSourceId = null;
+                if (alloc.income_source_id && importData.incomeSources) {
+                  const oldSource = importData.incomeSources.find((s: any) => s.id === alloc.income_source_id);
+                  if (oldSource && sourceNameMap[oldSource.name]) {
+                    newSourceId = sourceNameMap[oldSource.name];
+                  }
+                }
+
+                // Only include if source was found
+                if (alloc.income_source_id && !newSourceId) {
+                  return null; // Skip if source not found
+                }
+
+                return {
+                  category_id: newCategoryId,
+                  income_source_id: newSourceId,
+                  allocation_type: alloc.allocation_type,
+                  allocation_value: alloc.allocation_value,
+                  currency: alloc.currency || 'RUB',
+                };
+              })
+              .filter((a: any) => a !== null);
+
+            if (allocationsToImport.length > 0) {
+              await supabase.from("category_allocations").insert(allocationsToImport);
+            }
           }
 
           // Import expenses with mapped category IDs
@@ -880,9 +1009,10 @@ const Settings = () => {
         }
       }
 
+      const allocationsCount = categoryAllocations?.length || 0;
       toast({
         title: "Данные импортированы",
-        description: `Импортировано: ${importData.incomeSources?.length || 0} источников дохода, ${importData.categories?.length || 0} категорий, ${importData.incomes?.length || 0} доходов, ${importData.expenses?.length || 0} расходов`,
+        description: `Импортировано: ${importData.incomeSources?.length || 0} источников дохода, ${importData.categories?.length || 0} категорий, ${allocationsCount} настроек бюджета, ${importData.incomes?.length || 0} доходов, ${importData.expenses?.length || 0} расходов`,
       });
 
       // Reset file input
@@ -919,6 +1049,97 @@ const Settings = () => {
       toast({
         title: "Данные очищены",
         description: "Все ваши финансовые данные удалены",
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка очистки",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
+  };
+
+  const handleClearZenMoneyData = async () => {
+    if (!user) return;
+
+    if (!confirm("Удалить все транзакции из ZenMoney и пересинхронизировать?\n\nЭто удалит только транзакции, импортированные из ZenMoney. Ваши категории и источники дохода останутся.")) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Delete all expenses and incomes with zenmoney_id
+      await supabase
+        .from("expenses")
+        .delete()
+        .eq("user_id", user.id)
+        .not("zenmoney_id", "is", null);
+
+      await supabase
+        .from("incomes")
+        .delete()
+        .eq("user_id", user.id)
+        .not("zenmoney_id", "is", null);
+
+      // Reset sync state to force full resync
+      await supabase
+        .from("zenmoney_sync_state")
+        .update({
+          server_timestamp: 0,
+          last_sync_at: null,
+          sync_status: 'pending',
+        })
+        .eq("user_id", user.id);
+
+      toast({
+        title: "Данные ZenMoney очищены",
+        description: "Теперь можно выполнить новую синхронизацию",
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка очистки",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
+  };
+
+  const handleClearCurrentMonth = async () => {
+    if (!user) return;
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+    if (!confirm(`Удалить все транзакции за текущий месяц (${now.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })})?\n\nЭто действие нельзя отменить.`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Delete expenses for current month
+      await supabase
+        .from("expenses")
+        .delete()
+        .eq("user_id", user.id)
+        .gte("date", startOfMonth)
+        .lte("date", endOfMonth);
+
+      // Delete incomes for current month
+      await supabase
+        .from("incomes")
+        .delete()
+        .eq("user_id", user.id)
+        .gte("date", startOfMonth)
+        .lte("date", endOfMonth);
+
+      toast({
+        title: "Данные за месяц удалены",
+        description: "Можно начать месяц заново",
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
@@ -2059,14 +2280,56 @@ const Settings = () => {
             <p className="text-xs text-muted-foreground">
               Импорт заменит все существующие данные. Используйте файл, экспортированный из CrystalBudget.
             </p>
-            <Button
-              variant="destructive"
-              className="w-full"
-              onClick={handleClearData}
-              disabled={loading}
-            >
-              {loading ? "Очищаю..." : "Очистить все данные"}
-            </Button>
+            
+            {zenmoneyLinked && (
+              <div className="space-y-2 pt-2 border-t">
+                <p className="text-sm font-medium">Очистка данных ZenMoney</p>
+                <p className="text-xs text-muted-foreground">
+                  Если у вас проблемы с синхронизацией или хотите начать заново:
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleClearZenMoneyData}
+                  disabled={loading}
+                >
+                  {loading ? "Очищаю..." : "Очистить транзакции из ZenMoney"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Удалит только транзакции из ZenMoney. Категории и источники дохода останутся. После этого выполните синхронизацию заново.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2 border-t">
+              <p className="text-sm font-medium">Очистка текущего месяца</p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleClearCurrentMonth}
+                disabled={loading}
+              >
+                {loading ? "Очищаю..." : "Очистить текущий месяц"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Удалит все транзакции за текущий месяц. Полезно, если хотите начать месяц заново.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t">
+              <p className="text-sm font-medium text-destructive">Полная очистка</p>
+              <Button
+                variant="destructive"
+                className="w-full"
+                onClick={handleClearData}
+                disabled={loading}
+              >
+                {loading ? "Очищаю..." : "Очистить все данные"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                ⚠️ Удалит ВСЕ данные: транзакции, категории, источники дохода. Действие необратимо!
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
