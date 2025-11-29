@@ -719,11 +719,10 @@ const Settings = () => {
         description: `Найдено пользователей для экспорта: ${targetUserIds.length}`,
       });
 
-      // Fetch all data - using same approach as Dashboard
-      // For sources and categories, RLS handles filtering (no explicit user_id filter)
-      // For transactions, use familyUserIds filter
-      const incomeSourcesRes = await supabase.from("income_sources").select("*").order("created_at", { ascending: false });
-      const categoriesRes = await supabase.from("categories").select("*").order("created_at", { ascending: false });
+      // Fetch all data for all family members
+      // IMPORTANT: We need to explicitly filter by targetUserIds to get categories and sources from all family members
+      const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
+      const categoriesRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
       const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds).range(0, 10000);
       const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds).range(0, 10000);
       
@@ -757,8 +756,20 @@ const Settings = () => {
         const uid = inc.user_id || 'unknown';
         incomesByUser[uid] = (incomesByUser[uid] || 0) + 1;
       });
+      const categoriesByUser: Record<string, number> = {};
+      categories.forEach((cat: any) => {
+        const uid = cat.user_id || 'unknown';
+        categoriesByUser[uid] = (categoriesByUser[uid] || 0) + 1;
+      });
+      const sourcesByUser: Record<string, number> = {};
+      incomeSources.forEach((src: any) => {
+        const uid = src.user_id || 'unknown';
+        sourcesByUser[uid] = (sourcesByUser[uid] || 0) + 1;
+      });
       console.log('Export - Expenses by user:', expensesByUser);
       console.log('Export - Incomes by user:', incomesByUser);
+      console.log('Export - Categories by user:', categoriesByUser);
+      console.log('Export - Income sources by user:', sourcesByUser);
       console.log('Export - Target user IDs:', targetUserIds);
 
       const exportData = {
