@@ -5,17 +5,11 @@ import path from "path";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
-    host: "0.0.0.0",  // Bind to all network interfaces
+    host: "localhost",  // Use localhost for local development
     port: 8080,
-    allowedHosts: [
-      "crystalbudget.net",
-      "www.crystalbudget.net",
-      "localhost",
-      "139.59.131.34"
-    ],
   },
   preview: {
-    host: "0.0.0.0",  // Bind to all network interfaces
+    host: "localhost",  // Use localhost for local development
     port: 8080,
   },
   plugins: [react()],
@@ -27,6 +21,5 @@ export default defineConfig(({ mode }) => ({
   },
   optimizeDeps: {
     include: ["react", "react-dom", "react/jsx-runtime"],
-    force: true,
   },
 }));

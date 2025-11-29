@@ -53,27 +53,65 @@ export function CategoryCard({
             <h3 className="font-medium text-sm text-muted-foreground truncate">{category.name}</h3>
             <p className="text-xs text-muted-foreground">Не настроен</p>
           </div>
-          {onEdit && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-7 w-7 shrink-0"
-              onClick={() => onEdit(category)}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 shrink-0">
+            {onEdit && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 shrink-0"
+                onClick={() => onEdit(category)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {onDelete && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 shrink-0 text-destructive hover:text-destructive" 
+                onClick={() => onDelete(category.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
       );
     }
     
     return (
       <div className="group relative bg-card rounded-xl border-2 border-dashed p-4 hover:shadow-lg transition-all duration-300 hover:border-primary/50">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="text-4xl opacity-50">{category.icon}</div>
-          <div className="flex-1">
-            <h3 className="font-bold text-base text-muted-foreground">{category.name}</h3>
-            <p className="text-xs text-muted-foreground">Бюджет не настроен</p>
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3 flex-1">
+            <div className="text-4xl opacity-50">{category.icon}</div>
+            <div className="flex-1">
+              <h3 className="font-bold text-base text-muted-foreground">{category.name}</h3>
+              <p className="text-xs text-muted-foreground">Бюджет не настроен</p>
+            </div>
+          </div>
+          
+          {/* Кнопки редактирования и удаления */}
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 shrink-0">
+            {onEdit && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7" 
+                onClick={() => onEdit(category)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {onDelete && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 text-destructive hover:text-destructive" 
+                onClick={() => onDelete(category.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </div>
         

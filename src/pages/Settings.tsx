@@ -8,8 +8,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
-import { LogOut, Moon, Sun, Monitor, Users, Copy, UserPlus, Trash2, DollarSign } from "lucide-react";
-import { useState, useEffect } from "react";
+import { LogOut, Moon, Sun, Monitor, Users, Copy, UserPlus, Trash2, DollarSign, RefreshCw, Link2, Upload, Sparkles } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/hooks/useCurrency";
 
@@ -33,19 +33,54 @@ const Settings = () => {
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [telegramUsername, setTelegramUsername] = useState("");
   const [settingWebhook, setSettingWebhook] = useState(false);
+  const [zenmoneyLinked, setZenmoneyLinked] = useState(false);
+  const [zenmoneySyncing, setZenmoneySyncing] = useState(false);
+  const [zenmoneyLastSync, setZenmoneyLastSync] = useState<string | null>(null);
+  const [zenmoneyAccessToken, setZenmoneyAccessToken] = useState("");
+  const [zenmoneyRefreshToken, setZenmoneyRefreshToken] = useState("");
+  const [zenmoneyExpiresIn, setZenmoneyExpiresIn] = useState("");
+  const [zenmoneyManualMode, setZenmoneyManualMode] = useState(false);
+  const [zenmoneyCategories, setZenmoneyCategories] = useState<Array<{id: string, name: string, zenmoney_id: string | null}>>([]);
+  const [allCategories, setAllCategories] = useState<Array<{id: string, name: string}>>([]);
+  const [categoryMappings, setCategoryMappings] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [aiMapping, setAiMapping] = useState(false);
 
   useEffect(() => {
     if (user) {
       loadProfile();
       loadFamily();
       loadTelegramConnection();
+      loadZenMoneyConnection();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Check for ZenMoney OAuth callback
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    
+    if (code && state && user) {
+      // OAuth callback - connection should be handled by server
+      // Just reload the connection status after a short delay
+      setTimeout(() => {
+        loadZenMoneyConnection();
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        toast({
+          title: "ZenMoney подключен",
+          description: "Интеграция успешно настроена",
+        });
+      }, 2000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadProfile = async () => {
     if (!user) return;
-    
+
     const { data, error } = await supabase
       .from("profiles")
       .select("full_name")
@@ -59,7 +94,7 @@ const Settings = () => {
 
   const loadTelegramConnection = async () => {
     if (!user) return;
-    
+
     const { data, error } = await supabase
       .from("telegram_users")
       .select("telegram_username, telegram_first_name")
@@ -70,6 +105,196 @@ const Settings = () => {
       setTelegramLinked(true);
       setTelegramUsername(data.telegram_username || data.telegram_first_name || "");
     }
+  };
+
+  const loadZenMoneyConnection = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("zenmoney_connections")
+      .select("created_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!error && data) {
+      setZenmoneyLinked(true);
+      setZenmoneyLastSync(data.created_at);
+      await loadCategoryMappings();
+    } else {
+      setZenmoneyLinked(false);
+    }
+
+    // Check last sync time
+    const { data: syncState } = await supabase
+      .from("zenmoney_sync_state")
+      .select("last_sync_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (syncState?.last_sync_at) {
+      setZenmoneyLastSync(syncState.last_sync_at);
+    }
+  };
+
+  const loadCategoryMappings = async () => {
+    if (!user) return;
+
+    // Load categories with zenmoney_id (from ZenMoney)
+    const { data: zmCategories } = await supabase
+      .from("categories")
+      .select("id, name, zenmoney_id")
+      .eq("user_id", user.id)
+      .not("zenmoney_id", "is", null);
+
+    if (zmCategories) {
+      setZenmoneyCategories(zmCategories);
+    }
+
+    // Load all categories for mapping
+    const { data: categories } = await supabase
+      .from("categories")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .order("name");
+
+    if (categories) {
+      setAllCategories(categories);
+      
+      // Initialize mappings
+      const mappings: Record<string, string> = {};
+      zmCategories?.forEach(zmCat => {
+        if (zmCat.zenmoney_id) {
+          mappings[zmCat.zenmoney_id] = zmCat.id;
+        }
+      });
+      setCategoryMappings(mappings);
+    }
+  };
+
+  const handleAIMapCategories = async () => {
+    if (!user) return;
+
+    setAiMapping(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("Необходима авторизация");
+      }
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!SUPABASE_URL || !SUPABASE_KEY) {
+        throw new Error("Не настроены переменные окружения Supabase");
+      }
+
+      const MAP_URL = `${SUPABASE_URL}/functions/v1/zenmoney-map-categories`;
+
+      const response = await fetch(MAP_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': SUPABASE_KEY,
+        },
+      });
+
+      if (!response.ok) {
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch (e) {
+          const errorText = await response.text().catch(() => '');
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+
+      if (data.totalMapped > 0) {
+        toast({
+          title: "Категории сопоставлены",
+          description: `ИИ автоматически сопоставил ${data.totalMapped} категорий`,
+        });
+      } else {
+        toast({
+          title: "Сопоставление завершено",
+          description: "Все категории уже сопоставлены или нет категорий для сопоставления",
+        });
+      }
+
+      await loadCategoryMappings();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка AI-сопоставления",
+        description: errorMessage,
+      });
+    }
+    setAiMapping(false);
+  };
+
+  const handleMapCategory = async (zenmoneyId: string, categoryId: string) => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      // Find the category with this zenmoney_id
+      const { data: zmCategory } = await supabase
+        .from("categories")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("zenmoney_id", zenmoneyId)
+        .single();
+
+      if (zmCategory) {
+        // Update the category to point to the selected category
+        // We'll merge them by updating zenmoney_id of the target category
+        const { data: targetCategory } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("id", categoryId)
+          .single();
+
+        if (targetCategory) {
+          // Update target category with zenmoney_id
+          await supabase
+            .from("categories")
+            .update({ zenmoney_id: zenmoneyId })
+            .eq("id", categoryId);
+
+          // Delete the duplicate category from ZenMoney
+          await supabase
+            .from("categories")
+            .delete()
+            .eq("id", zmCategory.id);
+
+          // Update expenses to use the new category
+          await supabase
+            .from("expenses")
+            .update({ category_id: categoryId })
+            .eq("category_id", zmCategory.id);
+
+          toast({
+            title: "Категории сопоставлены",
+            description: "Категория успешно сопоставлена",
+          });
+
+          await loadCategoryMappings();
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка сопоставления",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
   };
 
   const loadFamily = async () => {
@@ -128,7 +353,7 @@ const Settings = () => {
         .select("full_name")
         .eq("user_id", familyData.owner_id)
         .maybeSingle();
-      
+
       allMembers.push({
         user_id: familyData.owner_id,
         full_name: ownerProfile?.full_name || "Пользователь",
@@ -151,7 +376,7 @@ const Settings = () => {
             .select("full_name")
             .eq("user_id", member.user_id)
             .maybeSingle();
-          
+
           return {
             ...member,
             full_name: profile?.full_name || "Пользователь",
@@ -173,7 +398,7 @@ const Settings = () => {
         .is("used_by", null)
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false });
-      
+
       if (codes) {
         setActiveCodes(codes);
       }
@@ -182,7 +407,7 @@ const Settings = () => {
 
   const handleCreateFamily = async () => {
     if (!user) return;
-    
+
     setLoading(true);
     const { data, error } = await supabase
       .from("families")
@@ -209,19 +434,19 @@ const Settings = () => {
 
   const handleGenerateCode = async () => {
     if (!user || !family) return;
-    
+
     setLoading(true);
-    
+
     // First, delete all existing active codes for this family
     await supabase
       .from("family_invite_codes")
       .delete()
       .eq("family_id", family.id)
       .is("used_by", null);
-    
+
     // Generate new code
     const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-    
+
     const { error } = await supabase
       .from("family_invite_codes")
       .insert({
@@ -249,7 +474,7 @@ const Settings = () => {
 
   const handleUpdateFamilyName = async () => {
     if (!user || !family || family.owner_id !== user.id) return;
-    
+
     setLoading(true);
     const { error } = await supabase
       .from("families")
@@ -274,9 +499,9 @@ const Settings = () => {
 
   const handleJoinFamily = async () => {
     if (!user || !joinCode) return;
-    
+
     setLoading(true);
-    
+
     // Call database function to join family
     const { data, error } = await supabase.rpc('join_family_with_code', {
       _invite_code: joinCode
@@ -484,6 +709,195 @@ const Settings = () => {
     setLoading(false);
   };
 
+  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!user) return;
+
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      // Read file content
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      // Validate data structure
+      if (!importData.incomeSources || !importData.categories || !importData.incomes || !importData.expenses) {
+        throw new Error("Неверный формат файла. Ожидается файл экспорта CrystalBudget.");
+      }
+
+      // Confirm import
+      if (!confirm("Импорт данных заменит все существующие данные. Продолжить?")) {
+        setLoading(false);
+        return;
+      }
+
+      // Import income sources
+      if (importData.incomeSources && importData.incomeSources.length > 0) {
+        const incomeSourcesToImport = importData.incomeSources.map((source: any) => ({
+          user_id: user.id,
+          name: source.name,
+          icon: source.icon || '💰',
+          currency: source.currency || 'RUB',
+        }));
+
+        // Delete existing and insert new
+        await supabase.from("income_sources").delete().eq("user_id", user.id);
+        if (incomeSourcesToImport.length > 0) {
+          await supabase.from("income_sources").insert(incomeSourcesToImport);
+        }
+      }
+
+      // Import categories
+      if (importData.categories && importData.categories.length > 0) {
+        const categoriesToImport = importData.categories.map((category: any) => ({
+          user_id: user.id,
+          name: category.name,
+          icon: category.icon || '📁',
+          linked_source_id: null, // Will need to be re-linked manually
+          allocation_amount: category.allocation_amount || null,
+          allocation_percent: category.allocation_percent || null,
+          zenmoney_id: category.zenmoney_id || null,
+        }));
+
+        // Delete existing and insert new
+        await supabase.from("categories").delete().eq("user_id", user.id);
+        if (categoriesToImport.length > 0) {
+          const { data: insertedCategories } = await supabase
+            .from("categories")
+            .insert(categoriesToImport)
+            .select();
+
+          // Create a mapping of old category IDs to new ones for expenses
+          const categoryIdMap: Record<string, string> = {};
+          if (insertedCategories && importData.categories) {
+            importData.categories.forEach((oldCat: any, index: number) => {
+              if (insertedCategories[index]) {
+                categoryIdMap[oldCat.id] = insertedCategories[index].id;
+              }
+            });
+          }
+
+          // Import expenses with mapped category IDs
+          if (importData.expenses && importData.expenses.length > 0) {
+            const expensesToImport = importData.expenses
+              .map((expense: any) => {
+                const newCategoryId = categoryIdMap[expense.category_id];
+                if (!newCategoryId) return null; // Skip if category not found
+
+                return {
+                  user_id: user.id,
+                  category_id: newCategoryId,
+                  amount: expense.amount,
+                  date: expense.date,
+                  description: expense.description || null,
+                  currency: expense.currency || 'RUB',
+                  zenmoney_id: expense.zenmoney_id || null,
+                };
+              })
+              .filter((e: any) => e !== null);
+
+            // Delete existing and insert new
+            await supabase.from("expenses").delete().eq("user_id", user.id);
+            if (expensesToImport.length > 0) {
+              await supabase.from("expenses").insert(expensesToImport);
+            }
+          }
+
+          // Import incomes
+          if (importData.incomes && importData.incomes.length > 0) {
+            // Map old source IDs to new ones
+            const sourceIdMap: Record<string, string> = {};
+            if (importData.incomeSources) {
+              const { data: newSources } = await supabase
+                .from("income_sources")
+                .select("id, name")
+                .eq("user_id", user.id);
+
+              if (newSources) {
+                importData.incomeSources.forEach((oldSource: any, index: number) => {
+                  const matchingSource = newSources.find(s => s.name === oldSource.name);
+                  if (matchingSource) {
+                    sourceIdMap[oldSource.id] = matchingSource.id;
+                  }
+                });
+              }
+            }
+
+            const incomesToImport = importData.incomes
+              .map((income: any) => {
+                const newSourceId = income.source_id ? sourceIdMap[income.source_id] : null;
+
+                return {
+                  user_id: user.id,
+                  source_id: newSourceId,
+                  amount: income.amount,
+                  date: income.date,
+                  description: income.description || null,
+                  currency: income.currency || 'RUB',
+                  zenmoney_id: income.zenmoney_id || null,
+                };
+              })
+              .filter((i: any) => i !== null);
+
+            // Delete existing and insert new
+            await supabase.from("incomes").delete().eq("user_id", user.id);
+            if (incomesToImport.length > 0) {
+              await supabase.from("incomes").insert(incomesToImport);
+            }
+          }
+        }
+      } else {
+        // If no categories, just import expenses and incomes without category/source mapping
+        if (importData.expenses && importData.expenses.length > 0) {
+          const expensesToImport = importData.expenses.map((expense: any) => ({
+            user_id: user.id,
+            category_id: expense.category_id || null,
+            amount: expense.amount,
+            date: expense.date,
+            description: expense.description || null,
+            currency: expense.currency || 'RUB',
+            zenmoney_id: expense.zenmoney_id || null,
+          }));
+
+          await supabase.from("expenses").delete().eq("user_id", user.id);
+          await supabase.from("expenses").insert(expensesToImport);
+        }
+
+        if (importData.incomes && importData.incomes.length > 0) {
+          const incomesToImport = importData.incomes.map((income: any) => ({
+            user_id: user.id,
+            source_id: income.source_id || null,
+            amount: income.amount,
+            date: income.date,
+            description: income.description || null,
+            currency: income.currency || 'RUB',
+            zenmoney_id: income.zenmoney_id || null,
+          }));
+
+          await supabase.from("incomes").delete().eq("user_id", user.id);
+          await supabase.from("incomes").insert(incomesToImport);
+        }
+      }
+
+      toast({
+        title: "Данные импортированы",
+        description: `Импортировано: ${importData.incomeSources?.length || 0} источников дохода, ${importData.categories?.length || 0} категорий, ${importData.incomes?.length || 0} доходов, ${importData.expenses?.length || 0} расходов`,
+      });
+
+      // Reset file input
+      event.target.value = '';
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка импорта",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
+  };
+
   const handleClearData = async () => {
     if (!user) return;
 
@@ -519,9 +933,9 @@ const Settings = () => {
 
   const handleLinkTelegram = async () => {
     if (!user || !telegramAuthCode) return;
-    
+
     setLoading(true);
-    
+
     // Find the auth code
     const { data: authData, error: authError } = await supabase
       .from("telegram_auth_codes")
@@ -588,7 +1002,7 @@ const Settings = () => {
 
   const handleUnlinkTelegram = async () => {
     if (!user) return;
-    
+
     setLoading(true);
     const { error } = await supabase
       .from("telegram_users")
@@ -616,9 +1030,9 @@ const Settings = () => {
     setSettingWebhook(true);
     try {
       const { data, error } = await supabase.functions.invoke('set-telegram-webhook');
-      
+
       if (error) throw error;
-      
+
       if (data.success) {
         toast({
           title: "Webhook установлен",
@@ -638,11 +1052,310 @@ const Settings = () => {
     setSettingWebhook(false);
   };
 
+  const handleConnectZenMoney = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('zenmoney-auth');
+
+      if (error) throw error;
+
+      if (data.authUrl) {
+        // Open OAuth URL in new window
+        window.location.href = data.authUrl;
+      } else {
+        throw new Error('Не удалось получить URL авторизации');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка подключения ZenMoney",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
+  };
+
+  const handleRequestZeroAppTokens = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      // Запрос токенов через Zero App API
+      // Замените URL на актуальный endpoint Zero App API
+      const zeroAppApiUrl = import.meta.env.VITE_ZERO_APP_API_URL || 'https://api.zeroapp.ru/zenmoney/tokens';
+      
+      const response = await fetch(zeroAppApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Zero App API error: ${response.status}`);
+      }
+
+      const tokenData = await response.json();
+
+      if (tokenData.access_token) {
+        setZenmoneyAccessToken(tokenData.access_token);
+        setZenmoneyRefreshToken(tokenData.refresh_token || '');
+        setZenmoneyExpiresIn(tokenData.expires_in?.toString() || '');
+        
+        toast({
+          title: "Токены получены",
+          description: "Токены успешно получены из Zero App API",
+        });
+      } else {
+        throw new Error('Токены не получены из Zero App API');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка запроса Zero App API",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
+  };
+
+  const handleSaveZenMoneyTokens = async () => {
+    if (!user || !zenmoneyAccessToken) {
+      toast({
+        variant: "destructive",
+        title: "Ошибка",
+        description: "Введите Access Token",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("Необходима авторизация");
+      }
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!SUPABASE_URL || !SUPABASE_KEY) {
+        throw new Error("Не настроены переменные окружения Supabase");
+      }
+
+      const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/zenmoney-auth`;
+
+      console.log('Calling ZenMoney auth function:', FUNCTION_URL);
+
+      const response = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': SUPABASE_KEY,
+        },
+        body: JSON.stringify({
+          access_token: zenmoneyAccessToken,
+          refresh_token: zenmoneyRefreshToken || undefined,
+          expires_in: zenmoneyExpiresIn ? parseInt(zenmoneyExpiresIn) : undefined,
+        }),
+      });
+
+      console.log('Response status:', response.status, response.statusText);
+
+      if (!response.ok) {
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+          console.error('Error response:', errorData);
+        } catch (e) {
+          const errorText = await response.text().catch(() => '');
+          errorMessage = errorText || errorMessage;
+          console.error('Error text:', errorText);
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      console.log('Success response:', data);
+
+      if (data.success) {
+        toast({
+          title: "ZenMoney подключен",
+          description: "Токены успешно сохранены",
+        });
+        setZenmoneyAccessToken("");
+        setZenmoneyRefreshToken("");
+        setZenmoneyExpiresIn("");
+        setZenmoneyManualMode(false);
+        await loadZenMoneyConnection();
+      } else {
+        throw new Error(data.error || 'Не удалось сохранить токены');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка сохранения токенов",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
+  };
+
+  const handleSyncZenMoney = async () => {
+    if (!user) return;
+
+    setZenmoneySyncing(true);
+    try {
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("Необходима авторизация");
+      }
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!SUPABASE_URL || !SUPABASE_KEY) {
+        throw new Error("Не настроены переменные окружения Supabase");
+      }
+
+      // Step 1: Sync data from ZenMoney
+      const SYNC_URL = `${SUPABASE_URL}/functions/v1/zenmoney-sync`;
+
+      console.log('Calling ZenMoney sync function:', SYNC_URL);
+
+      const syncResponse = await fetch(SYNC_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': SUPABASE_KEY,
+        },
+      });
+
+      console.log('Sync response status:', syncResponse.status, syncResponse.statusText);
+
+      if (!syncResponse.ok) {
+        let errorMessage = `HTTP error! status: ${syncResponse.status}`;
+        try {
+          const errorData = await syncResponse.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+          console.error('Error response:', errorData);
+        } catch (e) {
+          const errorText = await syncResponse.text().catch(() => '');
+          errorMessage = errorText || errorMessage;
+          console.error('Error text:', errorText);
+        }
+        throw new Error(errorMessage);
+      }
+
+      const syncData = await syncResponse.json();
+      console.log('Sync success response:', syncData);
+
+      // Step 2: Auto-map categories using AI
+      toast({
+        title: "Синхронизация завершена",
+        description: `Импортировано: ${syncData.accountsCount || 0} счетов, ${syncData.transactionsCount || 0} транзакций. Сопоставляю категории...`,
+      });
+
+      const MAP_URL = `${SUPABASE_URL}/functions/v1/zenmoney-map-categories`;
+
+      try {
+        const mapResponse = await fetch(MAP_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': SUPABASE_KEY,
+          },
+        });
+
+        if (mapResponse.ok) {
+          const mapData = await mapResponse.json();
+          console.log('AI mapping result:', mapData);
+
+          if (mapData.totalMapped > 0) {
+            toast({
+              title: "Категории сопоставлены",
+              description: `Автоматически сопоставлено ${mapData.totalMapped} категорий через ИИ`,
+            });
+          }
+        } else {
+          console.warn('AI mapping failed, but sync was successful');
+        }
+      } catch (mapError) {
+        console.warn('AI mapping error (non-critical):', mapError);
+        // Don't fail the whole sync if AI mapping fails
+      }
+
+      await loadZenMoneyConnection();
+      await loadCategoryMappings();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка синхронизации",
+        description: errorMessage,
+      });
+    }
+    setZenmoneySyncing(false);
+  };
+
+  const handleUnlinkZenMoney = async () => {
+    if (!user) return;
+
+    if (!confirm("Вы уверены, что хотите отключить ZenMoney? Все синхронизированные данные останутся, но синхронизация прекратится.")) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from("zenmoney_connections")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      await supabase
+        .from("zenmoney_sync_state")
+        .delete()
+        .eq("user_id", user.id);
+
+      toast({
+        title: "ZenMoney отключен",
+        description: "Интеграция успешно отключена",
+      });
+
+      setZenmoneyLinked(false);
+      setZenmoneyLastSync(null);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      toast({
+        variant: "destructive",
+        title: "Ошибка отключения",
+        description: errorMessage,
+      });
+    }
+    setLoading(false);
+  };
+
   const handleLogout = async () => {
     try {
       // First sign out
       const { error } = await supabase.auth.signOut();
-      
+
       // Ignore "Auth session missing" error as it means user is already logged out
       if (error && !error.message.includes('Auth session missing')) {
         toast({
@@ -652,15 +1365,15 @@ const Settings = () => {
         });
         return;
       }
-      
+
       // Wait a bit to ensure session is cleared
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       toast({
         title: "Вы вышли из системы",
         description: "До встречи!",
       });
-      
+
       // Force reload to clear any cached state
       window.location.href = "/auth";
     } catch (err) {
@@ -671,7 +1384,7 @@ const Settings = () => {
   };
 
   return (
-    <Layout selectedDate={new Date()} onDateChange={() => {}} showMonthSelector={false}>
+    <Layout selectedDate={new Date()} onDateChange={() => { }} showMonthSelector={false}>
       <div className="space-y-6 max-w-2xl">
         <div>
           <h1 className="text-3xl font-bold">Настройки</h1>
@@ -693,8 +1406,8 @@ const Settings = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="fullName">Имя</Label>
-              <Input 
-                id="fullName" 
+              <Input
+                id="fullName"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Введите ваше имя"
@@ -714,8 +1427,8 @@ const Settings = () => {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="newPassword">Новый пароль</Label>
-              <Input 
-                id="newPassword" 
+              <Input
+                id="newPassword"
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
@@ -724,16 +1437,16 @@ const Settings = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Подтвердите пароль</Label>
-              <Input 
-                id="confirmPassword" 
+              <Input
+                id="confirmPassword"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Повторите новый пароль"
               />
             </div>
-            <Button 
-              onClick={handleChangePassword} 
+            <Button
+              onClick={handleChangePassword}
               disabled={loading || !newPassword || !confirmPassword}
             >
               {loading ? "Изменение..." : "Изменить пароль"}
@@ -749,8 +1462,8 @@ const Settings = () => {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="currency">Валюта</Label>
-              <Select 
-                value={currency} 
+              <Select
+                value={currency}
                 onValueChange={async (newCurrency) => {
                   await updateCurrency(newCurrency);
                   toast({
@@ -839,8 +1552,8 @@ const Settings = () => {
                     <li>/help - помощь</li>
                   </ul>
                 </div>
-                <Button 
-                  onClick={handleUnlinkTelegram} 
+                <Button
+                  onClick={handleUnlinkTelegram}
                   disabled={loading}
                   variant="destructive"
                   className="w-full"
@@ -852,8 +1565,8 @@ const Settings = () => {
               <div className="space-y-4">
                 <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
                   <p className="text-sm font-medium">Шаг 1: Настройка бота</p>
-                  <Button 
-                    onClick={handleSetWebhook} 
+                  <Button
+                    onClick={handleSetWebhook}
                     disabled={settingWebhook}
                     variant="outline"
                     className="w-full"
@@ -878,15 +1591,15 @@ const Settings = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="telegramCode">Код авторизации</Label>
-                  <Input 
-                    id="telegramCode" 
+                  <Input
+                    id="telegramCode"
                     value={telegramAuthCode}
                     onChange={(e) => setTelegramAuthCode(e.target.value)}
                     placeholder="Введите код из Telegram"
                   />
                 </div>
-                <Button 
-                  onClick={handleLinkTelegram} 
+                <Button
+                  onClick={handleLinkTelegram}
                   disabled={loading || !telegramAuthCode}
                   className="w-full"
                 >
@@ -896,6 +1609,206 @@ const Settings = () => {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>ZenMoney</CardTitle>
+            <CardDescription>Синхронизация данных с ZenMoney</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {zenmoneyLinked ? (
+              <div className="space-y-4">
+                <div className="p-3 border rounded-lg bg-muted/30">
+                  <p className="text-sm font-medium">✅ ZenMoney подключен</p>
+                  {zenmoneyLastSync && (
+                    <p className="text-sm text-muted-foreground">
+                      Последняя синхронизация: {new Date(zenmoneyLastSync).toLocaleString('ru-RU')}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Синхронизация позволяет импортировать счета, категории и транзакции из ZenMoney в CrystalBudget.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleSyncZenMoney}
+                  disabled={zenmoneySyncing || loading}
+                  className="w-full"
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${zenmoneySyncing ? 'animate-spin' : ''}`} />
+                  {zenmoneySyncing ? "Синхронизация..." : "Синхронизировать"}
+                </Button>
+                <Button
+                  onClick={handleUnlinkZenMoney}
+                  disabled={loading}
+                  variant="destructive"
+                  className="w-full"
+                >
+                  Отключить ZenMoney
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Подключите ZenMoney для автоматической синхронизации ваших финансовых данных.
+                  </p>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    <li>Импорт счетов и балансов</li>
+                    <li>Импорт категорий расходов</li>
+                    <li>Импорт транзакций</li>
+                  </ul>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setZenmoneyManualMode(false)}
+                    variant={!zenmoneyManualMode ? "default" : "outline"}
+                    className="flex-1"
+                  >
+                    OAuth
+                  </Button>
+                  <Button
+                    onClick={() => setZenmoneyManualMode(true)}
+                    variant={zenmoneyManualMode ? "default" : "outline"}
+                    className="flex-1"
+                  >
+                    Zero App API
+                  </Button>
+                </div>
+
+                {!zenmoneyManualMode ? (
+                  <Button
+                    onClick={handleConnectZenMoney}
+                    disabled={loading}
+                    className="w-full"
+                  >
+                    <Link2 className="mr-2 h-4 w-4" />
+                    {loading ? "Подключение..." : "Подключить через OAuth"}
+                  </Button>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="zenmoneyAccessToken">Access Token *</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="zenmoneyAccessToken"
+                          type="password"
+                          value={zenmoneyAccessToken}
+                          onChange={(e) => setZenmoneyAccessToken(e.target.value)}
+                          placeholder="Введите Access Token из Zero App"
+                          className="flex-1"
+                        />
+                        <Button
+                          onClick={handleRequestZeroAppTokens}
+                          disabled={loading}
+                          variant="outline"
+                          type="button"
+                        >
+                          Запросить API
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Получите токен через Zero App API или введите вручную
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="zenmoneyRefreshToken">Refresh Token (опционально)</Label>
+                      <Input
+                        id="zenmoneyRefreshToken"
+                        type="password"
+                        value={zenmoneyRefreshToken}
+                        onChange={(e) => setZenmoneyRefreshToken(e.target.value)}
+                        placeholder="Введите Refresh Token"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="zenmoneyExpiresIn">Expires In (секунды, опционально)</Label>
+                      <Input
+                        id="zenmoneyExpiresIn"
+                        type="number"
+                        value={zenmoneyExpiresIn}
+                        onChange={(e) => setZenmoneyExpiresIn(e.target.value)}
+                        placeholder="Время жизни токена в секундах"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleSaveZenMoneyTokens}
+                      disabled={loading || !zenmoneyAccessToken}
+                      className="w-full"
+                    >
+                      {loading ? "Сохранение..." : "Сохранить токены"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {zenmoneyLinked && zenmoneyCategories.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Сопоставление категорий ZenMoney</CardTitle>
+              <CardDescription>Сопоставьте категории из ZenMoney с категориями CrystalBudget</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button
+                onClick={handleAIMapCategories}
+                disabled={aiMapping || loading}
+                variant="outline"
+                className="w-full"
+              >
+                <Sparkles className={`mr-2 h-4 w-4 ${aiMapping ? 'animate-pulse' : ''}`} />
+                {aiMapping ? "Сопоставляю через ИИ..." : "Автоматически сопоставить через ИИ"}
+              </Button>
+              <div className="space-y-3">
+                {zenmoneyCategories.map((zmCategory) => {
+                  const currentMapping = categoryMappings[zmCategory.zenmoney_id || ''];
+                  const isMapped = currentMapping === zmCategory.id;
+                  
+                  return (
+                    <div key={zmCategory.id} className="flex items-center gap-3 p-3 border rounded-lg">
+                      <div className="flex-1">
+                        <p className="font-medium">{zmCategory.name}</p>
+                        <p className="text-sm text-muted-foreground">Категория из ZenMoney</p>
+                      </div>
+                      <Select
+                        value={currentMapping || ''}
+                        onValueChange={(value) => {
+                          if (zmCategory.zenmoney_id) {
+                            handleMapCategory(zmCategory.zenmoney_id, value);
+                          }
+                        }}
+                        disabled={loading}
+                      >
+                        <SelectTrigger className="w-[200px]">
+                          <SelectValue placeholder="Выберите категорию" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={zmCategory.id}>
+                            {isMapped ? `✓ ${zmCategory.name}` : zmCategory.name}
+                          </SelectItem>
+                          {allCategories
+                            .filter(cat => cat.id !== zmCategory.id)
+                            .map(cat => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Используйте ИИ для автоматического сопоставления или выберите вручную. Сопоставленные категории позволят транзакциям из ZenMoney автоматически попадать в правильные категории CrystalBudget.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -961,8 +1874,8 @@ const Settings = () => {
                         onChange={(e) => setFamilyName(e.target.value)}
                         placeholder="Название семьи"
                       />
-                      <Button 
-                        onClick={handleUpdateFamilyName} 
+                      <Button
+                        onClick={handleUpdateFamilyName}
                         disabled={loading || familyName === family.name}
                       >
                         Сохранить
@@ -979,16 +1892,16 @@ const Settings = () => {
                 {family.owner_id === user?.id && (
                   <div className="space-y-3">
                     <Label>Код приглашения</Label>
-                    
+
                     {activeCodes.length > 0 ? (
                       <div className="space-y-2">
                         <div className="flex gap-2 items-center p-3 border rounded-lg bg-muted/30">
-                          <Input 
-                            value={activeCodes[0].code} 
-                            readOnly 
+                          <Input
+                            value={activeCodes[0].code}
+                            readOnly
                             className="flex-1 font-mono text-lg text-center"
                           />
-                          <Button 
+                          <Button
                             size="sm"
                             onClick={() => {
                               navigator.clipboard.writeText(activeCodes[0].code);
@@ -999,9 +1912,9 @@ const Settings = () => {
                             <Copy className="h-4 w-4" />
                           </Button>
                         </div>
-                        <Button 
-                          onClick={handleGenerateCode} 
-                          disabled={loading} 
+                        <Button
+                          onClick={handleGenerateCode}
+                          disabled={loading}
                           variant="outline"
                           className="w-full"
                         >
@@ -1009,15 +1922,15 @@ const Settings = () => {
                         </Button>
                       </div>
                     ) : (
-                      <Button 
-                        onClick={handleGenerateCode} 
-                        disabled={loading} 
+                      <Button
+                        onClick={handleGenerateCode}
+                        disabled={loading}
                         className="w-full"
                       >
                         Сгенерировать код
                       </Button>
                     )}
-                    
+
                     <p className="text-xs text-muted-foreground">
                       Код действителен 5 минут и может быть использован один раз
                     </p>
@@ -1031,8 +1944,8 @@ const Settings = () => {
                         Вы являетесь членом этой семьи
                       </p>
                     </div>
-                    <Button 
-                      onClick={handleLeaveFamily} 
+                    <Button
+                      onClick={handleLeaveFamily}
                       disabled={loading}
                       variant="destructive"
                       className="w-full"
@@ -1048,8 +1961,8 @@ const Settings = () => {
                     <Label>Члены семьи ({familyMembers.length})</Label>
                     <div className="space-y-2">
                       {familyMembers.map((member) => (
-                        <div 
-                          key={member.user_id} 
+                        <div
+                          key={member.user_id}
                           className="text-sm p-3 border rounded-lg flex items-center justify-between"
                         >
                           <div className="flex items-center gap-2">
@@ -1116,14 +2029,36 @@ const Settings = () => {
             <CardDescription>Управление вашими данными</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={handleExportData}
-              disabled={loading}
-            >
-              {loading ? "Экспортирую..." : "Экспортировать данные"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={handleExportData}
+                disabled={loading}
+              >
+                {loading ? "Экспортирую..." : "Экспортировать данные"}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                disabled={loading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                {loading ? "Импортирую..." : "Импортировать данные"}
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportData}
+                disabled={loading}
+                className="hidden"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Импорт заменит все существующие данные. Используйте файл, экспортированный из CrystalBudget.
+            </p>
             <Button
               variant="destructive"
               className="w-full"

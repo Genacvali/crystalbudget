@@ -378,22 +378,75 @@ const Categories = () => {
   };
 
   const handleConfirmDelete = async () => {
-    if (!categoryToDelete) return;
+    if (!categoryToDelete || !user) return;
 
+    setLoading(true);
     try {
+      // First, delete all category allocations (budget settings)
+      const { error: allocError } = await supabase
+        .from('category_allocations')
+        .delete()
+        .eq('category_id', categoryToDelete);
+
+      if (allocError) {
+        console.error('Error deleting allocations:', allocError);
+        // Continue anyway - allocations might not exist
+      }
+
+      // Also check if there are expenses linked to this category
+      const { data: expensesData } = await supabase
+        .from('expenses')
+        .select('id')
+        .eq('category_id', categoryToDelete)
+        .limit(1);
+
+      if (expensesData && expensesData.length > 0) {
+        // Ask user if they want to delete expenses too or just unlink them
+        const shouldDeleteExpenses = confirm(
+          'У этой категории есть связанные расходы. Удалить их вместе с категорией?\n\n' +
+          'Нажмите "OK" чтобы удалить расходы, или "Отмена" чтобы отменить удаление категории.'
+        );
+
+        if (shouldDeleteExpenses) {
+          // Delete all expenses for this category
+          const { error: expensesError } = await supabase
+            .from('expenses')
+            .delete()
+            .eq('category_id', categoryToDelete);
+
+          if (expensesError) {
+            throw new Error(`Не удалось удалить расходы: ${expensesError.message}`);
+          }
+        } else {
+          // User cancelled - don't delete category
+          setCategoryToDelete(null);
+          setDeleteDialogOpen(false);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Now delete the category
       const { error } = await supabase
         .from('categories')
         .delete()
-        .eq('id', categoryToDelete);
+        .eq('id', categoryToDelete)
+        .eq('user_id', user.id); // Add user_id check for safety
 
       if (error) throw error;
 
+      // Optimistically update UI without full reload
+      setCategories(prev => prev.filter(c => c.id !== categoryToDelete));
+      
+      // Also remove from expenses if they were deleted
+      if (expensesData && expensesData.length > 0) {
+        setExpenses(prev => prev.filter(e => e.category_id !== categoryToDelete));
+      }
+
       toast({
         title: "Категория удалена",
-        description: "Категория успешно удалена",
+        description: "Категория и все связанные настройки бюджета успешно удалены",
       });
-
-      await loadData();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
@@ -404,6 +457,7 @@ const Categories = () => {
     } finally {
       setCategoryToDelete(null);
       setDeleteDialogOpen(false);
+      setLoading(false);
     }
   };
 

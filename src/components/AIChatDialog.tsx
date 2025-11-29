@@ -223,15 +223,30 @@ export function AIChatDialog({ open, onOpenChange }: AIChatDialogProps) {
               .maybeSingle();
 
             if (category) {
+              // First, delete all category allocations (budget settings)
               await supabase
+                .from('category_allocations')
+                .delete()
+                .eq('category_id', category.id);
+
+              // Then delete the category
+              const { error } = await supabase
                 .from('categories')
                 .delete()
                 .eq('id', category.id);
 
-              toast({
-                title: "Категория удалена",
-                description: `Категория "${args.name}" успешно удалена`,
-              });
+              if (error) {
+                toast({
+                  title: "Ошибка удаления",
+                  description: error.message,
+                  variant: "destructive",
+                });
+              } else {
+                toast({
+                  title: "Категория удалена",
+                  description: `Категория "${args.name}" и все связанные настройки бюджета успешно удалены`,
+                });
+              }
             } else {
               toast({
                 title: "Категория не найдена",

@@ -1678,6 +1678,85 @@ async function handleCallbackQuery(query) {
     await sendTelegramMessage(chatId, '💸 Введите сумму расхода:\n\nНапример: <code>500</code> или <code>1500 Покупка продуктов</code>\n\nНажмите <b>🔙 Назад</b>, чтобы отменить');
     return;
   }
+  // Handle ZenMoney uncategorized transaction category selection
+  if (data.startsWith('zm_cat_')) {
+    await answerCallbackQuery(query.id, '');
+    const parts = data.replace('zm_cat_', '').split('_');
+    if (parts.length !== 2) {
+      await sendTelegramMessage(chatId, '❌ Ошибка обработки запроса');
+      return;
+    }
+    const expenseId = parts[0];
+    const categoryId = parts[1];
+    
+    // Update expense with category
+    const { error } = await supabase
+      .from('expenses')
+      .update({ category_id: categoryId })
+      .eq('id', expenseId)
+      .eq('user_id', effectiveUserId);
+    
+    if (error) {
+      console.error('Error updating expense category:', error);
+      await sendTelegramMessage(chatId, '❌ Ошибка обновления категории');
+      return;
+    }
+    
+    // Get category name for confirmation
+    const { data: category } = await supabase
+      .from('categories')
+      .select('name, icon')
+      .eq('id', categoryId)
+      .single();
+    
+    const categoryName = category ? `${category.icon} ${category.name}` : 'категория';
+    
+    // Edit message to show confirmation
+    try {
+      const editUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+      await fetch(editUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          text: `✅ <b>Категория выбрана</b>\n\n` +
+                `Транзакция из ZenMoney добавлена в категорию: <b>${categoryName}</b>`,
+          parse_mode: 'HTML'
+        })
+      });
+    } catch (error) {
+      console.error('Error editing message:', error);
+      await sendTelegramMessage(chatId, `✅ Категория ${categoryName} выбрана для транзакции`);
+    }
+    return;
+  }
+  
+  // Handle skip for ZenMoney uncategorized transaction
+  if (data.startsWith('zm_skip_')) {
+    await answerCallbackQuery(query.id, '');
+    const expenseId = data.replace('zm_skip_', '');
+    
+    // Edit message to show skipped
+    try {
+      const editUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+      await fetch(editUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          text: `⏭️ <b>Транзакция пропущена</b>\n\n` +
+                `Вы можете выбрать категорию позже в приложении`,
+          parse_mode: 'HTML'
+        })
+      });
+    } catch (error) {
+      console.error('Error editing message:', error);
+    }
+    return;
+  }
+  
   // Handle income source selection
   if (data.startsWith('inc_src_')) {
     console.log(`Handling income source selection`);
