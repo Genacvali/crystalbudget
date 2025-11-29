@@ -805,8 +805,8 @@ const Settings = () => {
         const sourcesToInsert = importData.incomeSources.map((s: any) => ({
           user_id: user.id,
           name: s.name,
-          icon: s.icon || '💰',
-          currency: s.currency || 'RUB',
+          color: s.color || '#10b981', // Default color if missing, table has color column
+          // currency column does not exist on income_sources table
           zenmoney_id: s.zenmoney_id || null,
         }));
 
