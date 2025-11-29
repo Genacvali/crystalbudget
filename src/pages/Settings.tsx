@@ -730,16 +730,7 @@ const Settings = () => {
         description: `Найдено пользователей для экспорта: ${targetUserIds.length}`,
       });
 
-      // Fetch all data for all family members
-      // IMPORTANT: We need to explicitly filter by targetUserIds to get categories and sources from all family members
-      console.log("Fetching income sources for user_ids:", targetUserIds);
-      const incomeSourcesRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
-      console.log("Income sources response:", { data: incomeSourcesRes.data?.length, error: incomeSourcesRes.error });
-      
-      console.log("Fetching categories for user_ids:", targetUserIds);
-      const categoriesRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
-      console.log("Categories response:", { data: categoriesRes.data?.length, error: categoriesRes.error });
-      
+      // First, fetch all transactions to get all category_id and source_id references
       console.log("Fetching incomes for user_ids:", targetUserIds);
       const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds).range(0, 10000);
       console.log("Incomes response:", { data: incomesRes.data?.length, error: incomesRes.error });
@@ -748,21 +739,72 @@ const Settings = () => {
       const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds).range(0, 10000);
       console.log("Expenses response:", { data: expensesRes.data?.length, error: expensesRes.error });
       
-      // Get category allocations (budget settings)
-      const categories = categoriesRes.data || [];
-      const categoryIds = categories.map(c => c.id);
+      const incomes = incomesRes.data || [];
+      const expenses = expensesRes.data || [];
       
-      const allocationsRes = categoryIds.length > 0 
-        ? await supabase.from("category_allocations").select("*").in("category_id", categoryIds)
+      // Collect all unique source_id and category_id from transactions
+      const sourceIds = new Set<string>();
+      const categoryIds = new Set<string>();
+      
+      incomes.forEach((inc: any) => {
+        if (inc.source_id) sourceIds.add(inc.source_id);
+      });
+      expenses.forEach((exp: any) => {
+        if (exp.category_id) categoryIds.add(exp.category_id);
+      });
+      
+      console.log("Found source_ids in transactions:", Array.from(sourceIds));
+      console.log("Found category_ids in transactions:", Array.from(categoryIds));
+      
+      // Fetch income sources - first by user_id, then by source_id from transactions
+      console.log("Fetching income sources for user_ids:", targetUserIds);
+      const incomeSourcesByUserRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
+      console.log("Income sources by user response:", { data: incomeSourcesByUserRes.data?.length, error: incomeSourcesByUserRes.error });
+      
+      // Also fetch sources by ID from transactions (to get sources from other users that are referenced)
+      let incomeSourcesByRefRes = { data: [] as any[], error: null };
+      if (sourceIds.size > 0) {
+        const sourceIdsArray = Array.from(sourceIds);
+        incomeSourcesByRefRes = await supabase.from("income_sources").select("*").in("id", sourceIdsArray);
+        console.log("Income sources by reference response:", { data: incomeSourcesByRefRes.data?.length, error: incomeSourcesByRefRes.error });
+      }
+      
+      // Merge sources (avoid duplicates)
+      const allSources = new Map<string, any>();
+      (incomeSourcesByUserRes.data || []).forEach((src: any) => allSources.set(src.id, src));
+      (incomeSourcesByRefRes.data || []).forEach((src: any) => allSources.set(src.id, src));
+      const incomeSources = Array.from(allSources.values());
+      
+      // Fetch categories - first by user_id, then by category_id from transactions
+      console.log("Fetching categories for user_ids:", targetUserIds);
+      const categoriesByUserRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
+      console.log("Categories by user response:", { data: categoriesByUserRes.data?.length, error: categoriesByUserRes.error });
+      
+      // Also fetch categories by ID from transactions (to get categories from other users that are referenced)
+      let categoriesByRefRes = { data: [] as any[], error: null };
+      if (categoryIds.size > 0) {
+        const categoryIdsArray = Array.from(categoryIds);
+        categoriesByRefRes = await supabase.from("categories").select("*").in("id", categoryIdsArray);
+        console.log("Categories by reference response:", { data: categoriesByRefRes.data?.length, error: categoriesByRefRes.error });
+      }
+      
+      // Merge categories (avoid duplicates)
+      const allCategories = new Map<string, any>();
+      (categoriesByUserRes.data || []).forEach((cat: any) => allCategories.set(cat.id, cat));
+      (categoriesByRefRes.data || []).forEach((cat: any) => allCategories.set(cat.id, cat));
+      const categories = Array.from(allCategories.values());
+      
+      // Get category allocations (budget settings)
+      const categoryIdsForAllocations = categories.map(c => c.id);
+      
+      const allocationsRes = categoryIdsForAllocations.length > 0 
+        ? await supabase.from("category_allocations").select("*").in("category_id", categoryIdsForAllocations)
         : { data: [] };
 
       // Profile and preferences (only for current user)
       const profileRes = await supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
       const currencyRes = await supabase.from("user_preferences").select("currency").eq("user_id", user.id).maybeSingle();
 
-      const incomeSources = incomeSourcesRes.data || [];
-      const incomes = incomesRes.data || [];
-      const expenses = expensesRes.data || [];
       const allocations = allocationsRes.data || [];
       const profile = profileRes.data || null;
       const currency = currencyRes.data?.currency || null;
