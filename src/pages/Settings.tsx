@@ -664,209 +664,25 @@ const Settings = () => {
 
     setLoading(true);
     try {
-      // 1. Identify users to export (self + family) - using same logic as Dashboard
-      let targetUserIds = [user.id];
-      let familyId = null;
+      console.log('Starting export via Edge Function...');
+      
+      // Call the data-export Edge Function
+      const { data, error } = await supabase.functions.invoke('data-export', {
+        body: { userId: user.id }
+      });
 
-      // Check if user is a family owner
-      console.log("Checking if user is family owner...");
-      const { data: ownedFamily, error: ownedFamilyError } = await supabase
-        .from("families")
-        .select("id")
-        .eq("owner_id", user.id)
-        .maybeSingle();
-      console.log("Owned family:", ownedFamily, "Error:", ownedFamilyError);
-
-      if (ownedFamily?.id) {
-        familyId = ownedFamily.id;
-      } else {
-        // Check if user is a family member
-        console.log("Checking if user is family member...");
-        const { data: membership, error: membershipError } = await supabase
-          .from("family_members")
-          .select("family_id")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        console.log("Membership:", membership, "Error:", membershipError);
-
-        if (membership?.family_id) {
-          familyId = membership.family_id;
-        }
+      if (error) {
+        console.error('Edge Function error:', error);
+        throw new Error(`Ошибка экспорта: ${error.message}`);
       }
 
-      if (familyId) {
-        console.log("Found family ID:", familyId);
-        // Get family owner
-        const { data: familyData, error: familyDataError } = await supabase
-          .from("families")
-          .select("owner_id")
-          .eq("id", familyId)
-          .single();
-        console.log("Family data:", familyData, "Error:", familyDataError);
-
-        // Get all family members
-        const { data: members, error: membersError } = await supabase
-          .from("family_members")
-          .select("user_id")
-          .eq("family_id", familyId);
-        console.log("Family members:", members, "Error:", membersError);
-
-        // Include owner and all members (same logic as Dashboard)
-        if (familyData?.owner_id) {
-          targetUserIds = [familyData.owner_id];
-          if (members && members.length > 0) {
-            targetUserIds = [familyData.owner_id, ...members.map(m => m.user_id)];
-          }
-        }
-      } else {
-        console.log("No family found, using only current user ID");
+      if (!data) {
+        throw new Error('Нет данных для экспорта');
       }
 
-      console.log("Exporting data for users:", targetUserIds);
-      console.log("Current user ID:", user.id);
-      console.log("Family ID:", familyId);
-      toast({
-        title: "Экспорт данных",
-        description: `Найдено пользователей для экспорта: ${targetUserIds.length}`,
-      });
+      const exportData = data;
 
-      // First, fetch all transactions to get all category_id and source_id references
-      console.log("Fetching incomes for user_ids:", targetUserIds);
-      const incomesRes = await supabase.from("incomes").select("*").in("user_id", targetUserIds).range(0, 10000);
-      console.log("Incomes response:", { data: incomesRes.data?.length, error: incomesRes.error });
-      
-      console.log("Fetching expenses for user_ids:", targetUserIds);
-      const expensesRes = await supabase.from("expenses").select("*").in("user_id", targetUserIds).range(0, 10000);
-      console.log("Expenses response:", { data: expensesRes.data?.length, error: expensesRes.error });
-      
-      const incomes = incomesRes.data || [];
-      const expenses = expensesRes.data || [];
-      
-      // Collect all unique source_id and category_id from transactions
-      const sourceIds = new Set<string>();
-      const categoryIds = new Set<string>();
-      
-      incomes.forEach((inc: any) => {
-        if (inc.source_id) sourceIds.add(inc.source_id);
-      });
-      expenses.forEach((exp: any) => {
-        if (exp.category_id) categoryIds.add(exp.category_id);
-      });
-      
-      console.log("Found source_ids in transactions:", Array.from(sourceIds));
-      console.log("Found category_ids in transactions:", Array.from(categoryIds));
-      
-      // Fetch income sources - first by user_id, then by source_id from transactions
-      console.log("Fetching income sources for user_ids:", targetUserIds);
-      const incomeSourcesByUserRes = await supabase.from("income_sources").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
-      console.log("Income sources by user response:", { data: incomeSourcesByUserRes.data?.length, error: incomeSourcesByUserRes.error });
-      
-      // Also fetch sources by ID from transactions (to get sources from other users that are referenced)
-      let incomeSourcesByRefRes = { data: [] as any[], error: null };
-      if (sourceIds.size > 0) {
-        const sourceIdsArray = Array.from(sourceIds);
-        incomeSourcesByRefRes = await supabase.from("income_sources").select("*").in("id", sourceIdsArray);
-        console.log("Income sources by reference response:", { data: incomeSourcesByRefRes.data?.length, error: incomeSourcesByRefRes.error });
-      }
-      
-      // Merge sources (avoid duplicates)
-      const allSources = new Map<string, any>();
-      (incomeSourcesByUserRes.data || []).forEach((src: any) => allSources.set(src.id, src));
-      (incomeSourcesByRefRes.data || []).forEach((src: any) => allSources.set(src.id, src));
-      const incomeSources = Array.from(allSources.values());
-      
-      console.log(`Total income sources after merge: ${incomeSources.length} (by user: ${incomeSourcesByUserRes.data?.length || 0}, by ref: ${incomeSourcesByRefRes.data?.length || 0})`);
-      console.log("Missing source IDs:", Array.from(sourceIds).filter(id => !allSources.has(id)));
-      
-      // Fetch categories - first by user_id, then by category_id from transactions
-      console.log("Fetching categories for user_ids:", targetUserIds);
-      const categoriesByUserRes = await supabase.from("categories").select("*").in("user_id", targetUserIds).order("created_at", { ascending: false });
-      console.log("Categories by user response:", { data: categoriesByUserRes.data?.length, error: categoriesByUserRes.error });
-      
-      // Also fetch categories by ID from transactions (to get categories from other users that are referenced)
-      let categoriesByRefRes = { data: [] as any[], error: null };
-      if (categoryIds.size > 0) {
-        const categoryIdsArray = Array.from(categoryIds);
-        console.log("Fetching categories by ID:", categoryIdsArray);
-        categoriesByRefRes = await supabase.from("categories").select("*").in("id", categoryIdsArray);
-        console.log("Categories by reference response:", { data: categoriesByRefRes.data?.length, error: categoriesByRefRes.error });
-        if (categoriesByRefRes.error) {
-          console.error("Error fetching categories by reference:", categoriesByRefRes.error);
-        }
-      }
-      
-      // Merge categories (avoid duplicates)
-      const allCategories = new Map<string, any>();
-      (categoriesByUserRes.data || []).forEach((cat: any) => allCategories.set(cat.id, cat));
-      (categoriesByRefRes.data || []).forEach((cat: any) => allCategories.set(cat.id, cat));
-      const categories = Array.from(allCategories.values());
-      
-      console.log(`Total categories after merge: ${categories.length} (by user: ${categoriesByUserRes.data?.length || 0}, by ref: ${categoriesByRefRes.data?.length || 0})`);
-      console.log("Missing category IDs:", Array.from(categoryIds).filter(id => !allCategories.has(id)));
-      
-      // Get category allocations (budget settings)
-      const categoryIdsForAllocations = categories.map(c => c.id);
-      
-      const allocationsRes = categoryIdsForAllocations.length > 0 
-        ? await supabase.from("category_allocations").select("*").in("category_id", categoryIdsForAllocations)
-        : { data: [] };
-
-      // Profile and preferences (only for current user)
-      const profileRes = await supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
-      const currencyRes = await supabase.from("user_preferences").select("currency").eq("user_id", user.id).maybeSingle();
-
-      const allocations = allocationsRes.data || [];
-      const profile = profileRes.data || null;
-      const currency = currencyRes.data?.currency || null;
-
-      // Log distribution by user_id for debugging
-      const expensesByUser: Record<string, number> = {};
-      expenses.forEach((exp: any) => {
-        const uid = exp.user_id || 'unknown';
-        expensesByUser[uid] = (expensesByUser[uid] || 0) + 1;
-      });
-      const incomesByUser: Record<string, number> = {};
-      incomes.forEach((inc: any) => {
-        const uid = inc.user_id || 'unknown';
-        incomesByUser[uid] = (incomesByUser[uid] || 0) + 1;
-      });
-      const categoriesByUser: Record<string, number> = {};
-      categories.forEach((cat: any) => {
-        const uid = cat.user_id || 'unknown';
-        categoriesByUser[uid] = (categoriesByUser[uid] || 0) + 1;
-      });
-      const sourcesByUser: Record<string, number> = {};
-      incomeSources.forEach((src: any) => {
-        const uid = src.user_id || 'unknown';
-        sourcesByUser[uid] = (sourcesByUser[uid] || 0) + 1;
-      });
-      console.log('Export - Expenses by user:', expensesByUser);
-      console.log('Export - Incomes by user:', incomesByUser);
-      console.log('Export - Categories by user:', categoriesByUser);
-      console.log('Export - Income sources by user:', sourcesByUser);
-      console.log('Export - Target user IDs:', targetUserIds);
-
-      const exportData = {
-        version: "2.0",
-        exportDate: new Date().toISOString(),
-        userId: user.id,
-        exportedUserIds: targetUserIds,
-        userEmail: user.email,
-        profile: profile,
-        currency: currency,
-        incomeSources: incomeSources,
-        categories: categories,
-        categoryAllocations: allocations,
-        incomes: incomes,
-        expenses: expenses,
-        metadata: {
-          totalIncomeSources: incomeSources.length,
-          totalCategories: categories.length,
-          totalAllocations: allocations.length,
-          totalIncomes: incomes.length,
-          totalExpenses: expenses.length,
-        }
-      };
+      console.log('Export data received:', exportData.metadata);
 
       // Create and download JSON file
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
@@ -881,10 +697,28 @@ const Settings = () => {
 
       toast({
         title: "Полный экспорт завершен",
-        description: `Экспортировано: ${incomeSources.length} источников, ${categories.length} категорий, ${allocations.length} настроек бюджета, ${incomes.length} доходов, ${expenses.length} расходов`,
+        description: `Экспортировано: ${exportData.metadata.totalIncomeSources} источников, ${exportData.metadata.totalCategories} категорий, ${exportData.metadata.totalAllocations} настроек бюджета, ${exportData.metadata.totalIncomes} доходов, ${exportData.metadata.totalExpenses} расходов`,
       });
+
+      console.log('Export - Expenses by user:', 
+        exportData.expenses.reduce((acc: Record<string, number>, exp: any) => {
+          const uid = exp.user_id || 'unknown';
+          acc[uid] = (acc[uid] || 0) + 1;
+          return acc;
+        }, {})
+      );
+
+      console.log('Export - Incomes by user:', 
+        exportData.incomes.reduce((acc: Record<string, number>, inc: any) => {
+          const uid = inc.user_id || 'unknown';
+          acc[uid] = (acc[uid] || 0) + 1;
+          return acc;
+        }, {})
+      );
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      console.error('Export failed:', error);
       toast({
         variant: "destructive",
         title: "Ошибка экспорта",
