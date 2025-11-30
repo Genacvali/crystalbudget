@@ -102,7 +102,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
 
   useEffect(() => {
     if (open && editingExpense) {
-      setCategoryId(editingExpense.category_id);
+      setCategoryId(editingExpense.category_id || "");
       // Используем оригинальную сумму без конвертации (хранится в исходной валюте)
       setAmount(editingExpense.amount.toString());
       setDate(new Date(editingExpense.date));

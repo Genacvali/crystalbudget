@@ -34,7 +34,7 @@ interface Transaction {
   date: string;
   description?: string;
   sourceId?: string;
-  categoryId?: string;
+  categoryId?: string | null;
   userName?: string;
   currency?: string; // Currency of the transaction
 }

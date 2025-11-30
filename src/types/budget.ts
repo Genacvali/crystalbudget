@@ -37,7 +37,7 @@ export interface Income {
 
 export interface Expense {
   id: string;
-  category_id: string; // Changed from categoryId to match DB schema
+  category_id: string | null; // Changed from categoryId to match DB schema
   amount: number;
   date: string;
   description?: string;

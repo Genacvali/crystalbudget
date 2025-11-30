@@ -196,13 +196,55 @@ ${sourcesText ? `Доступные источники дохода: ${sourcesTe
     }
 }
 
+// Helper function to find transaction owner by ZenMoney user ID
+async function getTransactionOwnerByZenMoneyUserId(
+    supabase: any,
+    familyOwnerId: string,
+    zenmoneyUserId: number
+): Promise<string | null> {
+    // Get family ID
+    const { data: ownedFamily } = await supabase
+        .from('families')
+        .select('id')
+        .eq('owner_id', familyOwnerId)
+        .maybeSingle();
+    
+    if (!ownedFamily?.id) {
+        // Not in a family, transaction belongs to owner
+        return familyOwnerId;
+    }
+    
+    // Get all family members (owner + members)
+    const { data: familyMembers } = await supabase
+        .from('family_members')
+        .select('user_id')
+        .eq('family_id', ownedFamily.id);
+    
+    // Get ZenMoney connections for all family members
+    const familyUserIds = [familyOwnerId, ...(familyMembers?.map((m: any) => m.user_id) || [])];
+    const { data: connections } = await supabase
+        .from('zenmoney_connections')
+        .select('user_id, zenmoney_user_id')
+        .in('user_id', familyUserIds);
+    
+    // Find user with matching ZenMoney user ID
+    const matchingConnection = connections?.find((c: any) => c.zenmoney_user_id === zenmoneyUserId);
+    
+    if (matchingConnection) {
+        return matchingConnection.user_id;
+    }
+    
+    // If no match found, default to family owner
+    return familyOwnerId;
+}
+
 async function sendUncategorizedTransactionToTelegram(
     supabase: any,
     userId: string,
     expense: any,
     zenmoneyUser?: number
 ) {
-    console.log('🚀 Starting sendUncategorizedTransactionToTelegram for userId:', userId, 'expenseId:', expense.id);
+    console.log('🚀 Starting sendUncategorizedTransactionToTelegram for expenseId:', expense.id, 'zenmoneyUser:', zenmoneyUser);
 
     const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
     if (!TELEGRAM_BOT_TOKEN) {
@@ -211,62 +253,38 @@ async function sendUncategorizedTransactionToTelegram(
     }
 
     try {
-        // Get family ID safely
-        let familyId: string | null = null;
-
-        // Check if user is family owner
-        const { data: ownedFamily } = await supabase
-            .from('families')
-            .select('id')
-            .eq('owner_id', userId)
-            .maybeSingle();
-
-        if (ownedFamily?.id) {
-            familyId = ownedFamily.id;
-        } else {
-            // Check if user is family member
-            const { data: familyMember } = await supabase
-                .from('family_members')
-                .select('family_id')
-                .eq('user_id', userId)
-                .maybeSingle();
-
-            if (familyMember?.family_id) {
-                familyId = familyMember.family_id;
+        // Find transaction owner by ZenMoney user ID
+        let transactionOwnerId = userId; // Default to current user
+        if (zenmoneyUser) {
+            const ownerId = await getTransactionOwnerByZenMoneyUserId(supabase, userId, zenmoneyUser);
+            if (ownerId) {
+                transactionOwnerId = ownerId;
+                console.log(`👤 Transaction owner found: ${transactionOwnerId} (ZenMoney user: ${zenmoneyUser})`);
+            } else {
+                console.log(`⚠️ Could not find transaction owner for ZenMoney user ${zenmoneyUser}, using default: ${userId}`);
             }
         }
 
-        // Get family members if in family
-        let familyMemberUserIds: string[] = [];
-        if (familyId) {
-            const { data: familyMembers } = await supabase
-                .from('family_members')
-                .select('user_id')
-                .eq('family_id', familyId);
-
-            familyMemberUserIds = familyMembers?.map((m: any) => m.user_id) || [];
-        }
-
-        // Get Telegram users (current user + family)
-        const targetUserIds = [userId, ...familyMemberUserIds];
-        const { data: telegramUsers } = await supabase
+        // Get Telegram user for transaction owner ONLY
+        const { data: telegramUser } = await supabase
             .from('telegram_users')
             .select('telegram_id')
-            .in('user_id', targetUserIds);
+            .eq('user_id', transactionOwnerId)
+            .maybeSingle();
 
-        if (!telegramUsers?.length) {
-            console.log('⚠️ No Telegram users found, skipping notification');
+        if (!telegramUser) {
+            console.log(`⚠️ No Telegram user found for transaction owner ${transactionOwnerId}, skipping notification`);
             return;
         }
 
-        // Get user's categories for buttons
+        // Get transaction owner's categories for buttons
         const { data: categories } = await supabase
             .from('categories')
             .select('id, name, icon')
-            .eq('user_id', userId)
+            .eq('user_id', transactionOwnerId)
             .order('name');
 
-        // Get AI recommendation
+        // Get AI recommendation (use transaction owner's categories)
         let aiRecommendation = null;
         let aiCategoryId = null;
         try {
@@ -289,7 +307,7 @@ async function sendUncategorizedTransactionToTelegram(
                 outcomeAccount: ''
             } as any;
 
-            const aiResult = await categorizeTransactionWithAI(supabase, userId, mockTx);
+            const aiResult = await categorizeTransactionWithAI(supabase, transactionOwnerId, mockTx);
             if (aiResult.categoryId) {
                 const category = categories?.find(c => c.id === aiResult.categoryId);
                 if (category) {
@@ -365,22 +383,21 @@ async function sendUncategorizedTransactionToTelegram(
             inline_keyboard: inlineKeyboard
         };
 
-        // Send to each Telegram user
-        for (const telegramUser of telegramUsers) {
-            let chatId: number;
-            if (typeof telegramUser.telegram_id === 'string') {
-                const parsed = parseInt(telegramUser.telegram_id, 10);
-                if (isNaN(parsed)) {
-                    console.error(`❌ Invalid telegram_id: ${telegramUser.telegram_id}`);
-                    continue;
-                }
-                chatId = parsed;
-            } else {
-                chatId = Number(telegramUser.telegram_id);
+        // Send to transaction owner ONLY
+        let chatId: number;
+        if (typeof telegramUser.telegram_id === 'string') {
+            const parsed = parseInt(telegramUser.telegram_id, 10);
+            if (isNaN(parsed)) {
+                console.error(`❌ Invalid telegram_id: ${telegramUser.telegram_id}`);
+                return;
             }
+            chatId = parsed;
+        } else {
+            chatId = Number(telegramUser.telegram_id);
+        }
 
-            try {
-                console.log(`📤 Sending inline keyboard message to chat_id: ${chatId}`);
+        try {
+            console.log(`📤 Sending inline keyboard message to transaction owner (chat_id: ${chatId}, user_id: ${transactionOwnerId})`);
 
                 const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
@@ -393,25 +410,24 @@ async function sendUncategorizedTransactionToTelegram(
                     }),
                 });
 
-                const result = await response.json();
-                if (response.ok && result.ok) {
-                    console.log(`✅ Sent inline keyboard to ${chatId}, message_id: ${result.result.message_id}`);
+            const result = await response.json();
+            if (response.ok && result.ok) {
+                console.log(`✅ Sent inline keyboard to transaction owner ${chatId}, message_id: ${result.result.message_id}`);
 
-                    // Save message for callback handling
-                    await supabase
-                        .from('telegram_messages')
-                        .upsert({
-                            expense_id: expense.id,
-                            telegram_chat_id: chatId,
-                            telegram_message_id: result.result.message_id,
-                            created_at: new Date().toISOString()
-                        }, { onConflict: 'expense_id,telegram_chat_id' });
-                } else {
-                    console.error(`❌ Failed to send to ${chatId}:`, result);
-                }
-            } catch (error) {
-                console.error(`❌ Error sending to ${chatId}:`, error);
+                // Save message for callback handling
+                await supabase
+                    .from('telegram_messages')
+                    .upsert({
+                        expense_id: expense.id,
+                        telegram_chat_id: chatId,
+                        telegram_message_id: result.result.message_id,
+                        created_at: new Date().toISOString()
+                    }, { onConflict: 'expense_id,telegram_chat_id' });
+            } else {
+                console.error(`❌ Failed to send to transaction owner ${chatId}:`, result);
             }
+        } catch (error) {
+            console.error(`❌ Error sending to transaction owner ${chatId}:`, error);
         }
 
         console.log('✅ Completed Telegram notification with inline keyboard');
@@ -753,7 +769,7 @@ async function syncWithZenMoney(
                     continue // Skip if already exists
                 }
 
-                // Find category
+                // Find category (only from ZenMoney tag, no AI auto-categorization)
                 let categoryId = null
                 if (tx.tag && tx.tag.length > 0) {
                     const { data: category } = await supabase
@@ -768,15 +784,8 @@ async function syncWithZenMoney(
                     }
                 }
 
-                // If no category, try AI categorization
-                if (!categoryId) {
-                    console.log(`No category found for transaction ${tx.id}, trying AI categorization...`);
-                    const aiResult = await categorizeTransactionWithAI(supabase, userId, tx);
-                    if (aiResult.type === 'expense' && aiResult.categoryId) {
-                        categoryId = aiResult.categoryId;
-                        console.log(`AI categorized as expense with category: ${categoryId}`);
-                    }
-                }
+                // Don't use AI auto-categorization - let user categorize via Telegram
+                // Transaction will be created without category and notification will be sent
 
                 // Calculate expense amount
                 // For transfers with tags, use net amount (outcome - income) or just outcome
