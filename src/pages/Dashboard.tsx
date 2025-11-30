@@ -58,6 +58,14 @@ const Dashboard = () => {
     return saved ? JSON.parse(saved) : false;
   });
   const [categoryFilter, setCategoryFilter] = useState<"all" | "attention" | "exceeded">("all");
+  const [zenmoneyAccounts, setZenmoneyAccounts] = useState<Array<{
+    id: string;
+    title: string;
+    balance: number;
+    currency?: string;
+    updated_at?: string;
+  }>>([]);
+  const [isZenMoneyConnected, setIsZenMoneyConnected] = useState(false);
   useEffect(() => {
     if (user) {
       loadData();
@@ -113,16 +121,16 @@ const Dashboard = () => {
 
       // Get family members to include their transactions
       let familyUserIds = [user!.id];
-      
+
       // Check if user is a family owner
       const { data: ownedFamily } = await supabase
         .from('families')
         .select('id')
         .eq('owner_id', user!.id)
         .maybeSingle();
-      
+
       let familyId: string | null = null;
-      
+
       if (ownedFamily?.id) {
         familyId = ownedFamily.id;
       } else {
@@ -132,12 +140,12 @@ const Dashboard = () => {
           .select('family_id')
           .eq('user_id', user!.id)
           .maybeSingle();
-        
+
         if (membership?.family_id) {
           familyId = membership.family_id;
         }
       }
-      
+
       if (familyId) {
         // Get family owner
         const { data: familyData } = await supabase
@@ -145,13 +153,13 @@ const Dashboard = () => {
           .select('owner_id')
           .eq('id', familyId)
           .single();
-        
+
         // Get all family members
         const { data: members } = await supabase
           .from('family_members')
           .select('user_id')
           .eq('family_id', familyId);
-        
+
         // Include owner and all members
         if (familyData?.owner_id) {
           familyUserIds = [familyData.owner_id];
@@ -249,6 +257,89 @@ const Dashboard = () => {
       if (expensesError) throw expensesError;
       setExpenses(expensesData || []);
 
+      // Check if ZenMoney is connected
+      const { data: zenmoneyConnection } = await supabase
+        .from('zenmoney_connections')
+        .select('id')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+
+      const isZenMoneyConnected = !!zenmoneyConnection;
+      setIsZenMoneyConnected(isZenMoneyConnected);
+
+      // Load ZenMoney accounts (for actual balance)
+      const {
+        data: zenmoneyAccountsData,
+        error: zenmoneyAccountsError
+      } = await (supabase as any).from('zenmoney_accounts').select('*').in('user_id', familyUserIds).eq('archive', false);
+
+      if (!zenmoneyAccountsError && zenmoneyAccountsData) {
+        setZenmoneyAccounts(zenmoneyAccountsData.map((acc: any) => ({
+          id: acc.id,
+          title: acc.title,
+          balance: Number(acc.balance),
+          currency: 'RUB', // Default to RUB as ZenMoney usually provides amount in base currency or we need to handle currency field if added
+          updated_at: acc.updated_at
+        })));
+      }
+
+      // If connected but no accounts found, trigger a sync in background and poll for updates
+      if (isZenMoneyConnected && (!zenmoneyAccountsData || zenmoneyAccountsData.length === 0)) {
+        console.log('ZenMoney connected but no accounts found. Triggering sync...');
+
+        // Trigger sync and handle response
+        supabase.functions.invoke('zenmoney-sync', {
+          body: { syncType: 'all' }
+        }).then(({ data, error }) => {
+          if (!error && data && data.accounts && data.accounts.length > 0) {
+            console.log('✅ Received accounts directly from sync:', data.accounts);
+            setZenmoneyAccounts(data.accounts.map((acc: any) => ({
+              id: acc.id, // Note: ZenMoney API returns 'id', DB has 'zenmoney_account_id'. We need to map correctly if we use DB IDs later, but for display 'id' is fine or we can generate one.
+              // Actually, for display we just need balance and title.
+              // Let's match the structure we expect from DB
+              title: acc.title,
+              balance: Number(acc.balance),
+              currency: 'RUB',
+              updated_at: new Date().toISOString()
+            })));
+
+            toast({
+              title: "Баланс обновлен",
+              description: "Данные о счетах успешно загружены из ZenMoney",
+            });
+          }
+        });
+
+        // Poll for accounts as backup (in case sync takes longer or returns nothing but saves to DB)
+        let attempts = 0;
+        const maxAttempts = 15;
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          console.log(`Polling for accounts (attempt ${attempts}/${maxAttempts})...`);
+
+          const { data: newAccounts } = await (supabase as any)
+            .from('zenmoney_accounts')
+            .select('*')
+            .in('user_id', familyUserIds)
+            .eq('archive', false);
+
+          if (newAccounts && newAccounts.length > 0) {
+            console.log('Accounts found in DB!', newAccounts);
+            setZenmoneyAccounts(newAccounts.map((acc: any) => ({
+              id: acc.id,
+              title: acc.title,
+              balance: Number(acc.balance),
+              currency: 'RUB',
+              updated_at: acc.updated_at
+            })));
+            clearInterval(pollInterval);
+          } else if (attempts >= maxAttempts) {
+            console.log('Stopped polling for accounts.');
+            clearInterval(pollInterval);
+          }
+        }, 2000);
+      }
+
       // Calculate category debts from previous month
       const previousMonthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1).toISOString();
       const previousMonthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 0, 23, 59, 59).toISOString();
@@ -271,10 +362,10 @@ const Dashboard = () => {
       console.log('Previous month range:', previousMonthStart, '-', previousMonthEnd);
       console.log('Previous incomes:', previousIncomesData?.length);
       console.log('Previous expenses:', previousExpensesData?.length);
-      
+
       mappedCategories.forEach(category => {
         let allocated = 0;
-        
+
         if (category.allocations && category.allocations.length > 0) {
           category.allocations.forEach(alloc => {
             if (alloc.allocationType === 'amount') {
@@ -306,12 +397,12 @@ const Dashboard = () => {
           .reduce((sum, exp) => sum + Number(exp.amount), 0);
 
         const balance = allocated - spent;
-        
+
         // If overspent, save the debt
         if (balance < 0) {
           debts[category.id] = Math.abs(balance);
           console.log(`Category ${category.name} has debt: spent=${spent}, allocated=${allocated}, debt=${Math.abs(balance)}`);
-        } 
+        }
         // If under-spent, save the carry-over
         else if (balance > 0) {
           carryOvers[category.id] = balance;
@@ -343,7 +434,7 @@ const Dashboard = () => {
     currency?: string;
   }) => {
     if (!user) return;
-    
+
     // Optimistic update
     const tempIncome = {
       id: `temp-${Date.now()}`,
@@ -355,9 +446,9 @@ const Dashboard = () => {
       currency: income.currency || userCurrency || 'RUB',
       created_at: new Date().toISOString()
     };
-    
+
     setIncomes(prev => [...prev, tempIncome]);
-    
+
     try {
       const { data, error } = await supabase
         .from('incomes')
@@ -371,12 +462,12 @@ const Dashboard = () => {
         })
         .select()
         .single();
-      
+
       if (error) throw error;
-      
+
       // Replace temp with real data
       setIncomes(prev => prev.map(i => i.id === tempIncome.id ? data : i));
-      
+
       toast({
         title: "Доход добавлен",
         description: "Транзакция успешно записана"
@@ -389,11 +480,11 @@ const Dashboard = () => {
           'income',
           'Доход добавлен',
           `Получен доход ${formatAmount(income.amount)} от источника "${sourceName}"`,
-          { 
-            amount: income.amount, 
-            sourceId: income.sourceId, 
+          {
+            amount: income.amount,
+            sourceId: income.sourceId,
             transactionId: data.id,
-            sourceName 
+            sourceName
           }
         );
       } catch (notificationError) {
@@ -420,7 +511,7 @@ const Dashboard = () => {
     currency?: string;
   }) => {
     if (!user) return;
-    
+
     // Optimistic update
     const tempExpense = {
       id: `temp-${Date.now()}`,
@@ -432,9 +523,9 @@ const Dashboard = () => {
       currency: expense.currency || userCurrency || 'RUB',
       created_at: new Date().toISOString()
     };
-    
+
     setExpenses(prev => [...prev, tempExpense]);
-    
+
     try {
       const { data, error } = await supabase
         .from('expenses')
@@ -448,12 +539,12 @@ const Dashboard = () => {
         })
         .select()
         .single();
-      
+
       if (error) throw error;
-      
+
       // Replace temp with real data
       setExpenses(prev => prev.map(e => e.id === tempExpense.id ? data : e));
-      
+
       toast({
         title: "Расход добавлен",
         description: "Транзакция успешно записана"
@@ -466,11 +557,11 @@ const Dashboard = () => {
           'expense',
           'Расход добавлен',
           `Потрачено ${formatAmount(expense.amount)} на категорию "${categoryName}"`,
-          { 
-            amount: expense.amount, 
-            categoryId: expense.categoryId, 
+          {
+            amount: expense.amount,
+            categoryId: expense.categoryId,
             transactionId: data.id,
-            categoryName 
+            categoryName
           }
         );
       } catch (notificationError) {
@@ -493,14 +584,14 @@ const Dashboard = () => {
   const calculateSourceSummaries = (): SourceSummary[] => {
     return incomeSources.map(source => {
       const sourceIncomes = incomes.filter(inc => inc.source_id === source.id);
-      
+
       // Group incomes by currency
       const incomesByCurrency: Record<string, number> = {};
       sourceIncomes.forEach(inc => {
         const currency = inc.currency || userCurrency || 'RUB';
         incomesByCurrency[currency] = (incomesByCurrency[currency] || 0) + Number(inc.amount);
       });
-      
+
       // Group allocations by currency
       const allocationsByCurrency: Record<string, number> = {};
       categories.forEach(category => {
@@ -509,20 +600,20 @@ const Dashboard = () => {
             if (alloc.incomeSourceId === source.id) {
               const currency = alloc.currency || userCurrency || 'RUB';
               const incomeInCurrency = incomesByCurrency[currency] || 0;
-              
+
               let allocAmount = 0;
               if (alloc.allocationType === 'amount') {
                 allocAmount = alloc.allocationValue;
               } else if (alloc.allocationType === 'percent') {
                 allocAmount = incomeInCurrency * alloc.allocationValue / 100;
               }
-              
+
               allocationsByCurrency[currency] = (allocationsByCurrency[currency] || 0) + allocAmount;
             }
           });
         }
       });
-      
+
       // Group expenses by currency (distributed proportionally)
       const spentByCurrency: Record<string, number> = {};
       categories.forEach(category => {
@@ -533,38 +624,38 @@ const Dashboard = () => {
             const currency = exp.currency || userCurrency || 'RUB';
             categoryExpensesByCurrency[currency] = (categoryExpensesByCurrency[currency] || 0) + Number(exp.amount);
           });
-        
+
         // For each currency, distribute expenses proportionally
         Object.entries(categoryExpensesByCurrency).forEach(([currency, expenseAmount]) => {
           if (expenseAmount === 0) return;
-          
+
           // Calculate total budget allocated to this category in this currency
           let categoryTotalBudget = 0;
           let budgetFromThisSource = 0;
-          
+
           if (category.allocations && category.allocations.length > 0) {
             category.allocations.forEach(alloc => {
               if (alloc.currency !== currency) return;
-              
+
               let allocAmount = 0;
               if (alloc.allocationType === 'amount') {
                 allocAmount = alloc.allocationValue;
               } else if (alloc.allocationType === 'percent') {
-                const sourceIncomesForAlloc = incomes.filter(inc => 
-                  inc.source_id === alloc.incomeSourceId && 
+                const sourceIncomesForAlloc = incomes.filter(inc =>
+                  inc.source_id === alloc.incomeSourceId &&
                   (inc.currency || userCurrency || 'RUB') === currency
                 );
                 const actualSourceTotal = sourceIncomesForAlloc.reduce((sum, inc) => sum + Number(inc.amount), 0);
                 allocAmount = actualSourceTotal * alloc.allocationValue / 100;
               }
-              
+
               categoryTotalBudget += allocAmount;
               if (alloc.incomeSourceId === source.id) {
                 budgetFromThisSource += allocAmount;
               }
             });
           }
-          
+
           // Distribute expenses proportionally
           if (categoryTotalBudget > 0 && budgetFromThisSource > 0) {
             const proportion = budgetFromThisSource / categoryTotalBudget;
@@ -572,7 +663,7 @@ const Dashboard = () => {
           }
         });
       });
-      
+
       // Calculate summaries for each currency
       const summariesByCurrency: Record<string, {
         totalIncome: number;
@@ -580,20 +671,20 @@ const Dashboard = () => {
         remaining: number;
         debt: number;
       }> = {};
-      
+
       const allCurrencies = new Set([
         ...Object.keys(incomesByCurrency),
         ...Object.keys(allocationsByCurrency),
         ...Object.keys(spentByCurrency)
       ]);
-      
+
       allCurrencies.forEach(currency => {
         const totalIncome = incomesByCurrency[currency] || 0;
         const totalAllocated = allocationsByCurrency[currency] || 0;
         const totalSpent = spentByCurrency[currency] || 0;
         const remaining = totalIncome - totalAllocated;
         const debt = remaining < 0 ? Math.abs(remaining) : 0;
-        
+
         summariesByCurrency[currency] = {
           totalIncome,
           totalSpent,
@@ -601,7 +692,7 @@ const Dashboard = () => {
           debt
         };
       });
-      
+
       // Calculate totals (for backward compatibility, use primary currency or first available)
       const primaryCurrency = userCurrency || 'RUB';
       const primarySummary = summariesByCurrency[primaryCurrency] || Object.values(summariesByCurrency)[0] || {
@@ -610,10 +701,10 @@ const Dashboard = () => {
         remaining: 0,
         debt: 0
       };
-      
+
       // Always include summariesByCurrency, even for single currency
       const hasMultipleCurrencies = Object.keys(summariesByCurrency).length > 1;
-      
+
       return {
         sourceId: source.id,
         totalIncome: primarySummary.totalIncome,
@@ -627,17 +718,17 @@ const Dashboard = () => {
 
   // Calculate category budgets (with multi-currency support)
   const calculateCategoryBudgets = (): CategoryBudget[] => {
-    
+
     return categories.map(category => {
       // Group expenses by currency
       const expensesByCurrency: Record<string, number> = {};
       const categoryExpenses = expenses.filter(exp => exp.category_id === category.id);
-      
+
       categoryExpenses.forEach(exp => {
         const expCurrency = (exp as any).currency || userCurrency || 'RUB';
         expensesByCurrency[expCurrency] = (expensesByCurrency[expCurrency] || 0) + Number(exp.amount);
       });
-      
+
       // Calculate budgets by currency
       const budgetsByCurrency: Record<string, {
         allocated: number;
@@ -646,10 +737,10 @@ const Dashboard = () => {
         debt?: number;
         carryOver?: number;
       }> = {};
-      
+
       // Group allocations by currency
       const allocationsByCurrency: Record<string, CategoryAllocation[]> = {};
-      
+
       if (category.allocations && category.allocations.length > 0) {
         category.allocations.forEach(alloc => {
           const allocCurrency = alloc.currency || userCurrency || 'RUB';
@@ -658,7 +749,7 @@ const Dashboard = () => {
           }
           allocationsByCurrency[allocCurrency].push(alloc);
         });
-        
+
         // Debug: log currencies for categories with multiple currencies
         const currencies = Object.keys(allocationsByCurrency);
         if (currencies.length > 1) {
@@ -669,7 +760,7 @@ const Dashboard = () => {
         const defaultCurrency = userCurrency || 'RUB';
         allocationsByCurrency[defaultCurrency] = [];
       }
-      
+
       // Calculate allocated budget for each currency
       Object.keys(allocationsByCurrency).forEach(currency => {
         let allocated = 0;
@@ -678,8 +769,8 @@ const Dashboard = () => {
             allocated += alloc.allocationValue;
           } else if (alloc.allocationType === 'percent') {
             // Filter incomes by currency and source
-            const sourceIncomes = incomes.filter(inc => 
-              inc.source_id === alloc.incomeSourceId && 
+            const sourceIncomes = incomes.filter(inc =>
+              inc.source_id === alloc.incomeSourceId &&
               ((inc as any).currency || userCurrency || 'RUB') === currency
             );
             const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
@@ -688,13 +779,13 @@ const Dashboard = () => {
             allocated += base * alloc.allocationValue / 100;
           }
         });
-        
+
         // Legacy support - if no allocations, use legacy fields
         if (allocationsByCurrency[currency].length === 0) {
           if (category.allocationAmount) {
             allocated = category.allocationAmount;
           } else if (category.linkedSourceId && category.allocationPercent) {
-            const sourceIncomes = incomes.filter(inc => 
+            const sourceIncomes = incomes.filter(inc =>
               inc.source_id === category.linkedSourceId &&
               ((inc as any).currency || userCurrency || 'RUB') === currency
             );
@@ -704,12 +795,12 @@ const Dashboard = () => {
             allocated = base * category.allocationPercent / 100;
           }
         }
-        
+
         const spent = expensesByCurrency[currency] || 0;
         const debt = (categoryDebts[category.id] || {})[currency] || 0;
         const carryOver = (categoryCarryOvers[category.id] || {})[currency] || 0;
         const totalAllocated = allocated + carryOver;
-        
+
         budgetsByCurrency[currency] = {
           allocated: totalAllocated,
           spent,
@@ -718,7 +809,7 @@ const Dashboard = () => {
           carryOver
         };
       });
-      
+
       // Also add currencies that have expenses but no allocations
       Object.keys(expensesByCurrency).forEach(currency => {
         if (!budgetsByCurrency[currency]) {
@@ -731,7 +822,7 @@ const Dashboard = () => {
           };
         }
       });
-      
+
       // Calculate total (for backward compatibility)
       let totalAllocated = 0;
       let totalSpent = 0;
@@ -739,18 +830,18 @@ const Dashboard = () => {
         totalAllocated += budget.allocated;
         totalSpent += budget.spent;
       });
-      
+
       const totalDebt = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.debt || 0), 0);
       const totalCarryOver = Object.values(budgetsByCurrency).reduce((sum, b) => sum + (b.carryOver || 0), 0);
-      
+
       const currenciesCount = Object.keys(budgetsByCurrency).length;
       const hasCurrencies = currenciesCount > 0;
-      
+
       // Debug: log if category has currencies
       if (hasCurrencies) {
         console.log(`Category ${category.name} has ${currenciesCount} currencies in budgetsByCurrency:`, Object.keys(budgetsByCurrency));
       }
-      
+
       return {
         categoryId: category.id,
         allocated: totalAllocated,
@@ -767,41 +858,41 @@ const Dashboard = () => {
   const balancesByCurrency = useMemo(() => {
     const incomeByCurrency: Record<string, number> = {};
     const expenseByCurrency: Record<string, number> = {};
-    
+
     incomes.forEach(inc => {
       const currency = inc.currency || userCurrency || 'RUB';
       incomeByCurrency[currency] = (incomeByCurrency[currency] || 0) + Number(inc.amount);
     });
-    
+
     expenses.forEach(exp => {
       const currency = exp.currency || userCurrency || 'RUB';
       expenseByCurrency[currency] = (expenseByCurrency[currency] || 0) + Number(exp.amount);
     });
-    
+
     const allCurrencies = new Set([
       ...Object.keys(incomeByCurrency),
       ...Object.keys(expenseByCurrency)
     ]);
-    
+
     const result: Record<string, {
       income: number;
       expense: number;
       balance: number;
       totalBalance: number;
     }> = {};
-    
+
     allCurrencies.forEach(currency => {
       const income = incomeByCurrency[currency] || 0;
       const expense = expenseByCurrency[currency] || 0;
       const balance = income - expense;
       const totalBalance = balance + (carryOverBalance || 0); // Note: carryOverBalance is in primary currency
-      
+
       result[currency] = { income, expense, balance, totalBalance };
     });
-    
+
     return result;
   }, [incomes, expenses, userCurrency, carryOverBalance]);
-  
+
   const currentMonthIncome = useMemo(
     () => {
       const primaryCurrency = userCurrency || 'RUB';
@@ -809,7 +900,7 @@ const Dashboard = () => {
     },
     [balancesByCurrency, userCurrency]
   );
-  
+
   const totalExpenses = useMemo(
     () => {
       const primaryCurrency = userCurrency || 'RUB';
@@ -817,7 +908,7 @@ const Dashboard = () => {
     },
     [balancesByCurrency, userCurrency]
   );
-  
+
   const monthBalance = useMemo(
     () => {
       const primaryCurrency = userCurrency || 'RUB';
@@ -825,7 +916,7 @@ const Dashboard = () => {
     },
     [balancesByCurrency, userCurrency]
   );
-  
+
   const totalBalance = useMemo(
     () => {
       const primaryCurrency = userCurrency || 'RUB';
@@ -833,23 +924,31 @@ const Dashboard = () => {
     },
     [balancesByCurrency, userCurrency]
   );
-  
+
   const sourceSummaries = useMemo(
     () => calculateSourceSummaries(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [incomeSources, incomes, expenses, categories]
   );
-  
+
   const categoryBudgets = useMemo(
     () => calculateCategoryBudgets(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [categories, incomes, expenses, incomeSources, categoryDebts, categoryCarryOvers]
   );
-  
+
   const monthName = useMemo(
     () => format(selectedDate, "LLLL", { locale: ru }),
     [selectedDate]
   );
+  const actualBalance = useMemo(() => {
+    return zenmoneyAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+  }, [zenmoneyAccounts]);
+
+  const hasZenMoneyAccounts = zenmoneyAccounts.length > 0;
+  const balanceDiff = hasZenMoneyAccounts ? actualBalance - totalBalance : 0;
+  const showDiffWarning = hasZenMoneyAccounts && Math.abs(balanceDiff) > 100;
+
   if (loading) {
     return (
       <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
@@ -858,276 +957,136 @@ const Dashboard = () => {
     );
   }
   return <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
-      {/* <PullToRefresh onRefresh={loadData}> */}
-        <div className="space-y-4 sm:space-y-6">
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          <SummaryCard 
-            title={`Баланс за ${monthName}`} 
-            value={formatAmount(monthBalance)} 
-            subtitle={monthBalance > 0 ? "Профицит" : monthBalance < 0 ? "Дефицит" : "Ноль"} 
-            icon={TrendingUp} 
-            variant={monthBalance > 0 ? "success" : monthBalance < 0 ? "destructive" : "default"}
-            valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ? 
-              Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.balance])) : 
-              undefined
-            }
-          />
-          <SummaryCard 
-            title="Общие расходы" 
-            value={formatAmount(totalExpenses)} 
-            subtitle={currentMonthIncome > 0 ? `${(totalExpenses / currentMonthIncome * 100).toFixed(0)}% от дохода` : undefined} 
-            icon={TrendingDown} 
-            variant="destructive"
-            valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ? 
-              Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.expense])) : 
-              undefined
-            }
-          />
-          <SummaryCard 
-            title="Общий баланс" 
-            value={formatAmount(totalBalance)} 
-            subtitle={carryOverBalance !== 0 ? `${formatAmount(monthBalance)} ${carryOverBalance >= 0 ? '+' : '-'} ${formatAmount(Math.abs(carryOverBalance))} остаток` : `Только за ${monthName}`} 
-            icon={PiggyBank} 
-            variant={totalBalance > 0 ? "success" : totalBalance < 0 ? "destructive" : "default"}
-            valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ? 
-              Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.totalBalance])) : 
-              undefined
-            }
-          />
-        </div>
+    {/* <PullToRefresh onRefresh={loadData}> */}
+    <div className="space-y-4 sm:space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        <SummaryCard
+          title={`Баланс за ${monthName}`}
+          value={formatAmount(monthBalance)}
+          subtitle={monthBalance > 0 ? "Профицит" : monthBalance < 0 ? "Дефицит" : "Ноль"}
+          icon={TrendingUp}
+          variant={monthBalance > 0 ? "success" : monthBalance < 0 ? "destructive" : "default"}
+          valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ?
+            Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.balance])) :
+            undefined
+          }
+        />
+        <SummaryCard
+          title="Общие расходы"
+          value={formatAmount(totalExpenses)}
+          subtitle={currentMonthIncome > 0 ? `${(totalExpenses / currentMonthIncome * 100).toFixed(0)}% от дохода` : undefined}
+          icon={TrendingDown}
+          variant="destructive"
+          valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ?
+            Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.expense])) :
+            undefined
+          }
+        />
+        <SummaryCard
+          title={isZenMoneyConnected ? "Фактический баланс" : "Общий баланс"}
+          value={formatAmount(isZenMoneyConnected && hasZenMoneyAccounts ? actualBalance : totalBalance)}
+          subtitle={
+            isZenMoneyConnected
+              ? (hasZenMoneyAccounts
+                ? (showDiffWarning
+                  ? `Расхождение: ${balanceDiff > 0 ? '+' : ''}${formatAmount(balanceDiff)}`
+                  : `Синхронизировано с банком`)
+                : "Синхронизация счетов...")
+              : (carryOverBalance !== 0
+                ? `${formatAmount(monthBalance)} ${carryOverBalance >= 0 ? '+' : '-'} ${formatAmount(Math.abs(carryOverBalance))} остаток`
+                : `Только за ${monthName}`)
+          }
+          icon={PiggyBank}
+          variant={
+            isZenMoneyConnected
+              ? (hasZenMoneyAccounts && showDiffWarning ? "warning" : "default")
+              : (totalBalance > 0 ? "success" : totalBalance < 0 ? "destructive" : "default")
+          }
+          valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ?
+            Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.totalBalance])) :
+            undefined
+          }
+          className={showDiffWarning ? "border-yellow-500/50 bg-yellow-50/10" : undefined}
+        />
+      </div>
 
-        {/* Quick Actions */}
-        <div className="flex gap-2 sm:gap-3">
-          <Button 
-            className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70 text-success-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]" 
-            onClick={() => {
-              console.log('Income button clicked');
-              setIncomeDialogOpen(true);
-            }}
-          >
-            <Plus className="h-5 w-5 mr-1 sm:mr-2 transition-transform duration-300 hover:rotate-90" strokeWidth={2.5} />
-            <span className="hidden xs:inline">Добавить </span>Доход
-          </Button>
-          <Button 
-            className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-destructive to-destructive/80 hover:from-destructive/90 hover:to-destructive/70 text-destructive-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]" 
-            onClick={() => {
-              console.log('Expense button clicked');
-              setExpenseDialogOpen(true);
-            }}
-          >
-            <Plus className="h-5 w-5 mr-1 sm:mr-2 transition-transform duration-300 hover:rotate-90" strokeWidth={2.5} />
-            <span className="hidden xs:inline">Добавить </span>Расход
-          </Button>
-          <Button className="h-auto py-2.5 sm:py-3 text-sm px-3 sm:px-4 flex items-center gap-2" variant="secondary" onClick={() => setAiChatOpen(true)}>
-            <Bot className="h-5 w-5" />
-            <span className="hidden sm:inline font-medium">G.A.I.A.</span>
-          </Button>
-        </div>
+      {/* Quick Actions */}
+      <div className="flex gap-2 sm:gap-3">
+        <Button
+          className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70 text-success-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+          onClick={() => {
+            console.log('Income button clicked');
+            setIncomeDialogOpen(true);
+          }}
+        >
+          <Plus className="h-5 w-5 mr-1 sm:mr-2 transition-transform duration-300 hover:rotate-90" strokeWidth={2.5} />
+          <span className="hidden xs:inline">Добавить </span>Доход
+        </Button>
+        <Button
+          className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-destructive to-destructive/80 hover:from-destructive/90 hover:to-destructive/70 text-destructive-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+          onClick={() => {
+            console.log('Expense button clicked');
+            setExpenseDialogOpen(true);
+          }}
+        >
+          <Plus className="h-5 w-5 mr-1 sm:mr-2 transition-transform duration-300 hover:rotate-90" strokeWidth={2.5} />
+          <span className="hidden xs:inline">Добавить </span>Расход
+        </Button>
+        <Button className="h-auto py-2.5 sm:py-3 text-sm px-3 sm:px-4 flex items-center gap-2" variant="secondary" onClick={() => setAiChatOpen(true)}>
+          <Bot className="h-5 w-5" />
+          <span className="hidden sm:inline font-medium">G.A.I.A.</span>
+        </Button>
+      </div>
 
-        {/* Tabs Navigation */}
-        <Tabs defaultValue="overview" className="space-y-3 sm:space-y-4">
-          <TabsList className="grid w-full grid-cols-3 h-auto">
-            <TabsTrigger value="overview" className="gap-1 sm:gap-2 py-2 text-xs sm:text-sm">
-              <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span>Обзор</span>
-            </TabsTrigger>
-            <TabsTrigger value="sources" className="gap-1 sm:gap-2 py-2 text-xs sm:text-sm">
-              <Wallet className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span>Источники</span>
-            </TabsTrigger>
-            <TabsTrigger value="categories" className="gap-1 sm:gap-2 py-2 text-xs sm:text-sm">
-              <FolderOpen className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span>Категории</span>
-            </TabsTrigger>
-          </TabsList>
+      {/* Tabs Navigation */}
+      <Tabs defaultValue="overview" className="space-y-3 sm:space-y-4">
+        <TabsList className="grid w-full grid-cols-3 h-auto">
+          <TabsTrigger value="overview" className="gap-1 sm:gap-2 py-2 text-xs sm:text-sm">
+            <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span>Обзор</span>
+          </TabsTrigger>
+          <TabsTrigger value="sources" className="gap-1 sm:gap-2 py-2 text-xs sm:text-sm">
+            <Wallet className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span>Источники</span>
+          </TabsTrigger>
+          <TabsTrigger value="categories" className="gap-1 sm:gap-2 py-2 text-xs sm:text-sm">
+            <FolderOpen className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span>Категории</span>
+          </TabsTrigger>
+        </TabsList>
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-4 sm:space-y-6">
-            <section className="space-y-1.5 sm:space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm sm:text-base font-bold flex items-center gap-1.5">
-                  <Wallet className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
-                  <span>Источники дохода</span>
-                </h2>
-              </div>
-              {incomeSources.length > 0 ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-2.5">
-                  {incomeSources.map(source => {
-                    const summary = sourceSummaries.find(s => s.sourceId === source.id);
-                    return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
-                  })}
-                </div>
-              ) : (
-                <EmptyState
-                  icon={Wallet}
-                  title="Нет источников дохода"
-                  description="Добавьте источник дохода, чтобы начать отслеживать финансы"
-                  action={{
-                    label: "Добавить источник",
-                    onClick: () => navigate('/incomes'),
-                    icon: Plus
-                  }}
-                />
-              )}
-            </section>
-
-            <section className="space-y-2 sm:space-y-3">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
-                  <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                  <span>Категории расходов</span>
-                  <span className="text-xs sm:text-sm text-muted-foreground font-normal">
-                    ({categories.length})
-                  </span>
-                </h2>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Фильтр */}
-                  <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
-                    <Button
-                      variant={categoryFilter === "all" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                      onClick={() => setCategoryFilter("all")}
-                    >
-                      Все
-                    </Button>
-                    <Button
-                      variant={categoryFilter === "attention" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                      onClick={() => setCategoryFilter("attention")}
-                    >
-                      Внимание
-                    </Button>
-                    <Button
-                      variant={categoryFilter === "exceeded" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                      onClick={() => setCategoryFilter("exceeded")}
-                    >
-                      Превышены
-                    </Button>
-                  </div>
-                  
-                  {/* Переключатель вида */}
-                  <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
-                    <Button
-                      variant={compactView ? "ghost" : "default"}
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={() => setCompactView(false)}
-                      title="Детальный вид"
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant={compactView ? "default" : "ghost"}
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={() => setCompactView(true)}
-                      title="Компактный вид"
-                    >
-                      <List className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  
-                  {/* Сортировка */}
-                  <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
-                    <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs">
-                      <ArrowUpDown className="h-3 w-3 mr-1" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="name">Имя</SelectItem>
-                      <SelectItem value="spent">Траты</SelectItem>
-                      <SelectItem value="remaining">Остаток</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {categories.length > 0 ? (
-                <div className={cn(
-                  "grid gap-2 sm:gap-3",
-                  compactView ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                )}>
-                  {[...categories]
-                    .filter(category => {
-                      const budget = categoryBudgets.find(b => b.categoryId === category.id);
-                      if (!budget) return false;
-                      
-                      const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
-                      const isOverBudget = budget.spent > budget.allocated;
-                      
-                      switch (categoryFilter) {
-                        case "attention":
-                          return usedPercentage > 70 && !isOverBudget;
-                        case "exceeded":
-                          return isOverBudget;
-                        default:
-                          return true;
-                      }
-                    })
-                    .sort((a, b) => {
-                      const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
-                      const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
-                      if (!budgetA || !budgetB) return 0;
-                      
-                      switch (categorySortBy) {
-                        case "name":
-                          return a.name.localeCompare(b.name);
-                        case "spent":
-                          return budgetB.spent - budgetA.spent;
-                        case "remaining":
-                          return budgetB.remaining - budgetA.remaining;
-                        default:
-                          return 0;
-                      }
-                    })
-                    .map(category => {
-                      const budget = categoryBudgets.find(b => b.categoryId === category.id);
-                      return budget ? (
-                        <CategoryCard 
-                          key={category.id} 
-                          category={category} 
-                          budget={budget} 
-                          incomeSources={incomeSources} 
-                          showSources={false}
-                          compact={compactView}
-                        />
-                      ) : null;
-                    })}
-                </div>
-              ) : (
-                <EmptyState
-                  icon={FolderOpen}
-                  title="Нет категорий расходов"
-                  description="Создайте категории, чтобы организовать свои расходы"
-                  action={{
-                    label: "Создать категорию",
-                    onClick: () => navigate('/categories'),
-                    icon: Plus
-                  }}
-                />
-              )}
-            </section>
-          </TabsContent>
-
-          {/* Sources Tab */}
-          <TabsContent value="sources" className="space-y-3 sm:space-y-4">
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-4 sm:space-y-6">
+          <section className="space-y-1.5 sm:space-y-2">
             <div className="flex items-center justify-between">
-              
+              <h2 className="text-sm sm:text-base font-bold flex items-center gap-1.5">
+                <Wallet className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+                <span>Источники дохода</span>
+              </h2>
             </div>
-            {incomeSources.length > 0 ? <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+            {incomeSources.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-2.5">
                 {incomeSources.map(source => {
-              const summary = sourceSummaries.find(s => s.sourceId === source.id);
-              return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
-            })}
-              </div> : <p className="text-sm text-muted-foreground">Нет источников дохода</p>}
-          </TabsContent>
+                  const summary = sourceSummaries.find(s => s.sourceId === source.id);
+                  return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
+                })}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Wallet}
+                title="Нет источников дохода"
+                description="Добавьте источник дохода, чтобы начать отслеживать финансы"
+                action={{
+                  label: "Добавить источник",
+                  onClick: () => navigate('/incomes'),
+                  icon: Plus
+                }}
+              />
+            )}
+          </section>
 
-          {/* Categories Tab */}
-          <TabsContent value="categories" className="space-y-3 sm:space-y-4">
+          <section className="space-y-2 sm:space-y-3">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
               <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
                 <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
@@ -1164,7 +1123,7 @@ const Dashboard = () => {
                     Превышены
                   </Button>
                 </div>
-                
+
                 {/* Переключатель вида */}
                 <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
                   <Button
@@ -1186,7 +1145,7 @@ const Dashboard = () => {
                     <List className="h-4 w-4" />
                   </Button>
                 </div>
-                
+
                 {/* Сортировка */}
                 <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
                   <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs">
@@ -1210,10 +1169,10 @@ const Dashboard = () => {
                   .filter(category => {
                     const budget = categoryBudgets.find(b => b.categoryId === category.id);
                     if (!budget) return false;
-                    
+
                     const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
                     const isOverBudget = budget.spent > budget.allocated;
-                    
+
                     switch (categoryFilter) {
                       case "attention":
                         return usedPercentage > 70 && !isOverBudget;
@@ -1227,7 +1186,7 @@ const Dashboard = () => {
                     const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
                     const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
                     if (!budgetA || !budgetB) return 0;
-                    
+
                     switch (categorySortBy) {
                       case "name":
                         return a.name.localeCompare(b.name);
@@ -1242,12 +1201,12 @@ const Dashboard = () => {
                   .map(category => {
                     const budget = categoryBudgets.find(b => b.categoryId === category.id);
                     return budget ? (
-                      <CategoryCard 
-                        key={category.id} 
-                        category={category} 
-                        budget={budget} 
-                        incomeSources={incomeSources} 
-                        showSources={true}
+                      <CategoryCard
+                        key={category.id}
+                        category={category}
+                        budget={budget}
+                        incomeSources={incomeSources}
+                        showSources={false}
                         compact={compactView}
                       />
                     ) : null;
@@ -1257,41 +1216,196 @@ const Dashboard = () => {
               <EmptyState
                 icon={FolderOpen}
                 title="Нет категорий расходов"
-                description="Создайте категории для отслеживания расходов"
+                description="Создайте категории, чтобы организовать свои расходы"
                 action={{
-                  label: "Добавить категорию",
+                  label: "Создать категорию",
                   onClick: () => navigate('/categories'),
                   icon: Plus
                 }}
               />
             )}
-          </TabsContent>
-        </Tabs>
-      </div>
-      {/* </PullToRefresh> */}
+          </section>
+        </TabsContent>
 
-      <IncomeDialog open={incomeDialogOpen} onOpenChange={setIncomeDialogOpen} incomeSources={incomeSources} onSave={handleAddIncome} onSourceCreated={loadData} />
+        {/* Sources Tab */}
+        <TabsContent value="sources" className="space-y-3 sm:space-y-4">
+          <div className="flex items-center justify-between">
 
-      <ExpenseDialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen} categories={categories} onSave={handleAddExpense} />
+          </div>
+          {incomeSources.length > 0 ? <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+            {incomeSources.map(source => {
+              const summary = sourceSummaries.find(s => s.sourceId === source.id);
+              return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
+            })}
+          </div> : <p className="text-sm text-muted-foreground">Нет источников дохода</p>}
+        </TabsContent>
 
-      <AIChatDialog open={aiChatOpen} onOpenChange={setAiChatOpen} />
+        {/* Categories Tab */}
+        <TabsContent value="categories" className="space-y-3 sm:space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
+              <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <span>Категории расходов</span>
+              <span className="text-xs sm:text-sm text-muted-foreground font-normal">
+                ({categories.length})
+              </span>
+            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Фильтр */}
+              <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                <Button
+                  variant={categoryFilter === "all" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => setCategoryFilter("all")}
+                >
+                  Все
+                </Button>
+                <Button
+                  variant={categoryFilter === "attention" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => setCategoryFilter("attention")}
+                >
+                  Внимание
+                </Button>
+                <Button
+                  variant={categoryFilter === "exceeded" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => setCategoryFilter("exceeded")}
+                >
+                  Превышены
+                </Button>
+              </div>
 
-      {user && (
-        <>
-          <QuickGuide
-            open={quickGuideOpen}
-            onOpenChange={setQuickGuideOpen}
-            onComplete={() => loadData()}
-            userId={user.id}
-          />
+              {/* Переключатель вида */}
+              <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                <Button
+                  variant={compactView ? "ghost" : "default"}
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => setCompactView(false)}
+                  title="Детальный вид"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={compactView ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => setCompactView(true)}
+                  title="Компактный вид"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </div>
 
-          <TelegramGuide
-            open={telegramGuideOpen}
-            onOpenChange={setTelegramGuideOpen}
-            onConnectNow={() => navigate("/settings")}
-          />
-        </>
-      )}
-    </Layout>;
+              {/* Сортировка */}
+              <Select value={categorySortBy} onValueChange={(value: "name" | "spent" | "remaining") => setCategorySortBy(value)}>
+                <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs">
+                  <ArrowUpDown className="h-3 w-3 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">Имя</SelectItem>
+                  <SelectItem value="spent">Траты</SelectItem>
+                  <SelectItem value="remaining">Остаток</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {categories.length > 0 ? (
+            <div className={cn(
+              "grid gap-2 sm:gap-3",
+              compactView ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            )}>
+              {[...categories]
+                .filter(category => {
+                  const budget = categoryBudgets.find(b => b.categoryId === category.id);
+                  if (!budget) return false;
+
+                  const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
+                  const isOverBudget = budget.spent > budget.allocated;
+
+                  switch (categoryFilter) {
+                    case "attention":
+                      return usedPercentage > 70 && !isOverBudget;
+                    case "exceeded":
+                      return isOverBudget;
+                    default:
+                      return true;
+                  }
+                })
+                .sort((a, b) => {
+                  const budgetA = categoryBudgets.find(budget => budget.categoryId === a.id);
+                  const budgetB = categoryBudgets.find(budget => budget.categoryId === b.id);
+                  if (!budgetA || !budgetB) return 0;
+
+                  switch (categorySortBy) {
+                    case "name":
+                      return a.name.localeCompare(b.name);
+                    case "spent":
+                      return budgetB.spent - budgetA.spent;
+                    case "remaining":
+                      return budgetB.remaining - budgetA.remaining;
+                    default:
+                      return 0;
+                  }
+                })
+                .map(category => {
+                  const budget = categoryBudgets.find(b => b.categoryId === category.id);
+                  return budget ? (
+                    <CategoryCard
+                      key={category.id}
+                      category={category}
+                      budget={budget}
+                      incomeSources={incomeSources}
+                      showSources={true}
+                      compact={compactView}
+                    />
+                  ) : null;
+                })}
+            </div>
+          ) : (
+            <EmptyState
+              icon={FolderOpen}
+              title="Нет категорий расходов"
+              description="Создайте категории для отслеживания расходов"
+              action={{
+                label: "Добавить категорию",
+                onClick: () => navigate('/categories'),
+                icon: Plus
+              }}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+    {/* </PullToRefresh> */}
+
+    <IncomeDialog open={incomeDialogOpen} onOpenChange={setIncomeDialogOpen} incomeSources={incomeSources} onSave={handleAddIncome} onSourceCreated={loadData} />
+
+    <ExpenseDialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen} categories={categories} onSave={handleAddExpense} />
+
+    <AIChatDialog open={aiChatOpen} onOpenChange={setAiChatOpen} />
+
+    {user && (
+      <>
+        <QuickGuide
+          open={quickGuideOpen}
+          onOpenChange={setQuickGuideOpen}
+          onComplete={() => loadData()}
+          userId={user.id}
+        />
+
+        <TelegramGuide
+          open={telegramGuideOpen}
+          onOpenChange={setTelegramGuideOpen}
+          onConnectNow={() => navigate("/settings")}
+        />
+      </>
+    )}
+  </Layout>;
 };
 export default Dashboard;

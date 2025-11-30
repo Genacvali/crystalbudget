@@ -1868,14 +1868,25 @@ const Settings = () => {
                     Данные автоматически синхронизируются с ZenMoney. Счета, категории и транзакции обновляются каждую минуту.
                   </p>
                 </div>
-                <Button
-                  onClick={handleUnlinkZenMoney}
-                  disabled={loading}
-                  variant="destructive"
-                  className="w-full"
-                >
-                  Отключить ZenMoney
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleSyncZenMoney('all')}
+                    disabled={zenmoneySyncing}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${zenmoneySyncing ? 'animate-spin' : ''}`} />
+                    {zenmoneySyncing ? "Обновление..." : "Обновить данные"}
+                  </Button>
+                  <Button
+                    onClick={handleUnlinkZenMoney}
+                    disabled={loading}
+                    variant="destructive"
+                    className="flex-1"
+                  >
+                    Отключить
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">

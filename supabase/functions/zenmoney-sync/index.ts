@@ -469,11 +469,26 @@ async function syncWithZenMoney(
         serverTimestamp: serverTimestamp,
     }
 
+    // Check if we have any accounts for this user
+    const { count: accountsCount, error: countError } = await supabase
+        .from('zenmoney_accounts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+
+    const hasAccounts = !countError && accountsCount !== null && accountsCount > 0
+    console.log(`Checking existing accounts: ${hasAccounts ? 'Found ' + accountsCount : 'None found'}`)
+
     // If first sync or syncType is 'all', request all data
     if (serverTimestamp === 0 || syncType === 'all') {
         requestBody.forceFetch = ['instrument', 'account', 'tag', 'transaction']
         console.log('📥 Full sync: requesting ALL data from ZenMoney (forceFetch enabled)')
     } else {
+        // If we don't have accounts locally, force fetch them even in incremental sync
+        if (!hasAccounts) {
+            requestBody.forceFetch = ['account']
+            console.log('📥 Missing local accounts: forcing account fetch')
+        }
+
         // For transactions-only sync, don't use forceFetch - ZenMoney will return only new transactions
         // based on serverTimestamp
         console.log(`📥 Incremental sync: requesting only NEW transactions since timestamp ${serverTimestamp} (forceFetch disabled)`)
@@ -497,11 +512,11 @@ async function syncWithZenMoney(
 
     console.log(`📊 ZenMoney API response: Accounts: ${data.account?.length || 0}, Tags: ${data.tag?.length || 0}, Transactions: ${data.transaction?.length || 0} (${syncType === 'transactions' && serverTimestamp > 0 ? 'only NEW transactions' : 'all data'})`)
 
-    // Process accounts (skip if only syncing transactions)
-    if (syncType === 'all' && data.account && data.account.length > 0) {
+    // Process accounts (always process if present, as balance changes frequently)
+    if (data.account && data.account.length > 0) {
         console.log(`Processing ${data.account.length} accounts`)
         for (const account of data.account) {
-            await supabase
+            const { error: upsertError } = await supabase
                 .from('zenmoney_accounts')
                 .upsert({
                     user_id: userId,
@@ -510,7 +525,17 @@ async function syncWithZenMoney(
                     title: account.title,
                     instrument_id: account.instrument,
                     balance: account.balance,
+                    startBalance: account.startBalance,
+                    creditLimit: account.creditLimit,
+                    archive: account.archive,
+                    updated_at: new Date().toISOString()
+                }, {
+                    onConflict: 'user_id, zenmoney_account_id'
                 })
+
+            if (upsertError) {
+                console.error(`❌ Error saving account ${account.title}:`, upsertError)
+            }
         }
     }
 
@@ -887,6 +912,7 @@ async function syncWithZenMoney(
         accountsCount: data.account?.length || 0,
         tagsCount: data.tag?.length || 0,
         transactionsCount: data.transaction?.length || 0,
+        accounts: data.account || [] // Return accounts to frontend
     }
 }
 

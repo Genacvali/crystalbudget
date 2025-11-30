@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { LucideIcon } from "lucide-react";
 
 const currencySymbols: Record<string, string> = {
-  RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+  RUB: '₽', USD: '$', EUR: '€', GBP: '£',
   JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
 };
 
@@ -12,8 +12,9 @@ interface SummaryCardProps {
   subtitle?: string;
   icon: LucideIcon;
   trend?: "up" | "down" | "neutral";
-  variant?: "default" | "success" | "destructive";
+  variant?: "default" | "success" | "destructive" | "warning";
   valuesByCurrency?: Record<string, number>; // Multi-currency support
+  className?: string;
 }
 
 export function SummaryCard({
@@ -24,17 +25,20 @@ export function SummaryCard({
   trend = "neutral",
   variant = "default",
   valuesByCurrency,
+  className,
 }: SummaryCardProps) {
   const variantClasses = {
     default: "bg-card border-border",
     success: "bg-success/5 border-success/20",
     destructive: "bg-destructive/5 border-destructive/20",
+    warning: "bg-yellow-500/5 border-yellow-500/20",
   };
 
   const textClasses = {
     default: "text-foreground",
     success: "text-success",
     destructive: "text-destructive",
+    warning: "text-yellow-600",
   };
 
   return (
