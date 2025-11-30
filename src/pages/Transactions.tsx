@@ -44,11 +44,11 @@ const Transactions = () => {
   const { toast } = useToast();
   const { formatAmount, currency: userCurrency } = useCurrency();
   const { createNotification } = useNotifications();
-  
+
   // Format amount with currency symbol
   const formatAmountWithCurrency = (amount: number, currency?: string) => {
     const currencySymbols: Record<string, string> = {
-      RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+      RUB: '₽', USD: '$', EUR: '€', GBP: '£',
       JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
     };
     const curr = currency || userCurrency || 'RUB';
@@ -56,7 +56,7 @@ const Transactions = () => {
     return `${amount.toLocaleString('ru-RU')} ${symbol}`;
   };
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -180,7 +180,7 @@ const Transactions = () => {
         description: income.description,
         sourceId: income.source_id,
         userName: profilesMap[income.user_id] || "Вы",
-        currency: income.currency, // Add currency field
+        currency: (income as any).currency, // Add currency field
       };
     });
 
@@ -195,7 +195,7 @@ const Transactions = () => {
         description: expense.description,
         categoryId: expense.category_id,
         userName: profilesMap[expense.user_id] || "Вы",
-        currency: expense.currency, // Add currency field
+        currency: (expense as any).currency, // Add currency field
       };
     });
 
@@ -237,7 +237,7 @@ const Transactions = () => {
         toast({ title: "Ошибка", description: "Не удалось добавить доход", variant: "destructive" });
       } else {
         toast({ title: "Успешно", description: "Доход добавлен" });
-        
+
         // Create additional notification for better UX
         try {
           const sourceName = incomeSources.find(s => s.id === income.sourceId)?.name || 'Неизвестный источник';
@@ -245,17 +245,17 @@ const Transactions = () => {
             'income',
             'Доход добавлен',
             `Получен доход ${formatAmount(income.amount)} от источника "${sourceName}"`,
-            { 
-              amount: income.amount, 
-              sourceId: income.sourceId, 
-              sourceName 
+            {
+              amount: income.amount,
+              sourceId: income.sourceId,
+              sourceName
             }
           );
         } catch (notificationError) {
           console.error('Failed to create notification:', notificationError);
           // Don't fail the whole operation if notification fails
         }
-        
+
         fetchData();
       }
     }
@@ -295,7 +295,7 @@ const Transactions = () => {
         toast({ title: "Ошибка", description: "Не удалось добавить расход", variant: "destructive" });
       } else {
         toast({ title: "Успешно", description: "Расход добавлен" });
-        
+
         // Create additional notification for better UX
         try {
           const categoryName = categories.find(c => c.id === expense.categoryId)?.name || 'Неизвестная категория';
@@ -303,17 +303,17 @@ const Transactions = () => {
             'expense',
             'Расход добавлен',
             `Потрачено ${formatAmount(expense.amount)} на категорию "${categoryName}"`,
-            { 
-              amount: expense.amount, 
-              categoryId: expense.categoryId, 
-              categoryName 
+            {
+              amount: expense.amount,
+              categoryId: expense.categoryId,
+              categoryName
             }
           );
         } catch (notificationError) {
           console.error('Failed to create notification:', notificationError);
           // Don't fail the whole operation if notification fails
         }
-        
+
         fetchData();
       }
     }
@@ -323,7 +323,7 @@ const Transactions = () => {
     if (transaction.type === "income") {
       setEditingIncome({
         id: transaction.id,
-        sourceId: transaction.sourceId || "",
+        source_id: transaction.sourceId || "",
         amount: transaction.amount,
         date: transaction.date,
         description: transaction.description,
@@ -333,7 +333,7 @@ const Transactions = () => {
     } else {
       setEditingExpense({
         id: transaction.id,
-        categoryId: transaction.categoryId || "",
+        category_id: transaction.categoryId || "",
         amount: transaction.amount,
         date: transaction.date,
         description: transaction.description,
@@ -423,7 +423,7 @@ const Transactions = () => {
     transactions.forEach(transaction => {
       const date = new Date(transaction.date);
       const dateKey = format(date, 'yyyy-MM-dd');
-      
+
       if (!grouped.has(dateKey)) {
         grouped.set(dateKey, []);
       }
@@ -432,20 +432,20 @@ const Transactions = () => {
 
     return Array.from(grouped.entries()).map(([dateKey, transactions]) => {
       const date = new Date(dateKey);
-      
+
       // Group by currency
       const totalsByCurrency: Record<string, {
         totalIncome: number;
         totalExpense: number;
         netAmount: number;
       }> = {};
-      
+
       transactions.forEach(transaction => {
         const currency = transaction.currency || userCurrency || 'RUB';
         if (!totalsByCurrency[currency]) {
           totalsByCurrency[currency] = { totalIncome: 0, totalExpense: 0, netAmount: 0 };
         }
-        
+
         if (transaction.type === 'income') {
           totalsByCurrency[currency].totalIncome += transaction.amount;
         } else {
@@ -453,7 +453,7 @@ const Transactions = () => {
         }
         totalsByCurrency[currency].netAmount = totalsByCurrency[currency].totalIncome - totalsByCurrency[currency].totalExpense;
       });
-      
+
       // Calculate totals for primary currency (for backward compatibility)
       const primaryCurrency = userCurrency || 'RUB';
       const primaryTotals = totalsByCurrency[primaryCurrency] || { totalIncome: 0, totalExpense: 0, netAmount: 0 };
@@ -462,7 +462,7 @@ const Transactions = () => {
       let relativeLabel = '';
       const dateWithoutTime = new Date(date);
       dateWithoutTime.setHours(0, 0, 0, 0);
-      
+
       if (dateWithoutTime.getTime() === today.getTime()) {
         relativeLabel = 'Сегодня';
       } else if (dateWithoutTime.getTime() === yesterday.getTime()) {
@@ -473,7 +473,7 @@ const Transactions = () => {
         date: dateKey,
         dateLabel: format(date, 'd MMMM yyyy', { locale: ru }),
         relativeLabel,
-        transactions: transactions.sort((a, b) => 
+        transactions: transactions.sort((a, b) =>
           new Date(b.date).getTime() - new Date(a.date).getTime()
         ),
         totalIncome: primaryTotals.totalIncome,
@@ -595,11 +595,11 @@ const Transactions = () => {
                         // Multiple currencies - show separate badges
                         Object.entries(group.totalsByCurrency).map(([currency, totals]) => {
                           const currencySymbols: Record<string, string> = {
-                            RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+                            RUB: '₽', USD: '$', EUR: '€', GBP: '£',
                             JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
                           };
                           const symbol = currencySymbols[currency] || currency;
-                          
+
                           return (
                             <div key={currency} className="flex items-center gap-1.5">
                               {totals.totalIncome > 0 && (
@@ -646,71 +646,69 @@ const Transactions = () => {
 
                 {/* Транзакции этого дня */}
                 {group.transactions.map((transaction) => (
-              <Card key={transaction.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex items-start sm:items-center gap-3">
-                      <div className={`p-2 rounded-lg shrink-0 ${
-                        transaction.type === "income" 
-                          ? "bg-success/10" 
-                          : "bg-destructive/10"
-                      }`}>
-                        {transaction.type === "income" ? (
-                          <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
-                        ) : (
-                          <ArrowDownRight className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-sm sm:text-base truncate">
-                          {transaction.category}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground truncate">
-                            {transaction.description || "Без описания"}
-                          </span>
-                          <span className="text-xs text-muted-foreground">•</span>
-                          <span className="text-xs text-muted-foreground">
-                            {transaction.userName}
-                          </span>
-                          <span className="text-xs text-muted-foreground">•</span>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(transaction.date), "d MMM yyyy", { locale: ru })}
-                          </span>
+                  <Card key={transaction.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex items-start sm:items-center gap-3">
+                          <div className={`p-2 rounded-lg shrink-0 ${transaction.type === "income"
+                            ? "bg-success/10"
+                            : "bg-destructive/10"
+                            }`}>
+                            {transaction.type === "income" ? (
+                              <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
+                            ) : (
+                              <ArrowDownRight className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-sm sm:text-base truncate">
+                              {transaction.category}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
+                              <span className="text-xs text-muted-foreground truncate">
+                                {transaction.description || "Без описания"}
+                              </span>
+                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">
+                                {transaction.userName}
+                              </span>
+                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">
+                                {format(new Date(transaction.date), "HH:mm", { locale: ru })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4">
+                          <p className={`text-lg sm:text-xl font-bold ${transaction.type === "income"
+                            ? "text-success"
+                            : "text-destructive"
+                            }`}>
+                            {transaction.type === "income" ? "+" : "-"}
+                            {formatAmountWithCurrency(transaction.amount, transaction.currency)}
+                          </p>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0"
+                              onClick={() => handleEditTransaction(transaction)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => setDeletingTransaction(transaction)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4">
-                      <p className={`text-lg sm:text-xl font-bold ${
-                        transaction.type === "income"
-                          ? "text-success"
-                          : "text-destructive"
-                      }`}>
-                        {transaction.type === "income" ? "+" : "-"}
-                        {formatAmountWithCurrency(transaction.amount, transaction.currency)}
-                      </p>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="shrink-0"
-                          onClick={() => handleEditTransaction(transaction)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => setDeletingTransaction(transaction)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             ))

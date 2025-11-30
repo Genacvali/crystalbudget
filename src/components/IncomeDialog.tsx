@@ -15,7 +15,7 @@ import { CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import type { IncomeSource } from "@/types/budget";
+import type { Income, IncomeSource } from "@/types/budget";
 import { IncomeSourceDialog } from "./IncomeSourceDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,7 +33,7 @@ interface IncomeDialogProps {
   onOpenChange: (open: boolean) => void;
   incomeSources: IncomeSource[];
   onSave: (income: { sourceId: string; amount: number; date: string; description?: string; currency?: string }) => void;
-  editingIncome?: { id: string; sourceId: string; amount: number; date: string; description?: string; currency?: string } | null;
+  editingIncome?: Income | null;
   onSourceCreated?: () => void;
 }
 
@@ -79,7 +79,7 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
 
   useEffect(() => {
     if (open && editingIncome) {
-      setSourceId(editingIncome.sourceId);
+      setSourceId(editingIncome.source_id);
       // Используем оригинальную сумму без конвертации (хранится в исходной валюте)
       setAmount(editingIncome.amount.toString());
       setDate(new Date(editingIncome.date));
@@ -136,8 +136,8 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
             <Label htmlFor="source">Источник</Label>
-            <Select 
-              value={sourceId} 
+            <Select
+              value={sourceId}
               onValueChange={(value) => {
                 if (value === "create-new") {
                   setShowSourceDialog(true);
@@ -270,7 +270,7 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
           </Button>
         </DialogFooter>
       </DialogContent>
-      
+
       <IncomeSourceDialog
         open={showSourceDialog}
         onOpenChange={setShowSourceDialog}

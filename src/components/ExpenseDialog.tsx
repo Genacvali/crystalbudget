@@ -15,7 +15,7 @@ import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import type { Category } from "@/types/budget";
+import type { Category, Expense } from "@/types/budget";
 import { handleNumericInput } from "@/lib/numberInput";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -31,7 +31,7 @@ interface ExpenseDialogProps {
   onOpenChange: (open: boolean) => void;
   categories: Category[];
   onSave: (expense: { categoryId: string; amount: number; date: string; description?: string; currency?: string }) => void;
-  editingExpense?: { id: string; categoryId: string; amount: number; date: string; description?: string; currency?: string } | null;
+  editingExpense?: Expense | null;
 }
 
 export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingExpense }: ExpenseDialogProps) {
@@ -44,9 +44,9 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
   const [currency, setCurrency] = useState<string>(userCurrency || 'RUB');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [categoryCurrencies, setCategoryCurrencies] = useState<string[]>([]);
-  
+
   const currencySymbols: Record<string, string> = {
-    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
+    RUB: '₽', USD: '$', EUR: '€', GBP: '£',
     JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
   };
 
@@ -73,8 +73,9 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         // Get unique currencies from allocations
         const currencies = new Set<string>();
         (allocations || []).forEach(alloc => {
-          if (alloc.currency) {
-            currencies.add(alloc.currency);
+          const currency = (alloc as any).currency;
+          if (currency) {
+            currencies.add(currency);
           }
         });
 
@@ -101,7 +102,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
 
   useEffect(() => {
     if (open && editingExpense) {
-      setCategoryId(editingExpense.categoryId);
+      setCategoryId(editingExpense.category_id);
       // Используем оригинальную сумму без конвертации (хранится в исходной валюте)
       setAmount(editingExpense.amount.toString());
       setDate(new Date(editingExpense.date));
@@ -282,10 +283,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Отмена
           </Button>
-          <Button onClick={() => {
-            console.log('Add button clicked in ExpenseDialog');
-            handleSave();
-          }}>
+          <Button onClick={handleSave}>
             {editingExpense ? "Сохранить" : "Добавить"}
           </Button>
         </DialogFooter>
