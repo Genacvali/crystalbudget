@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ThemeProvider } from "next-themes";
 import { ThemeColorUpdater } from "@/components/ThemeColorUpdater";
+import { ZenMoneyAutoSync } from "@/components/ZenMoneyAutoSync";
 import { Toaster } from "@/components/ui/toaster";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -64,6 +65,7 @@ const App = () => (
           </Routes>
         </Suspense>
       </BrowserRouter>
+      <ZenMoneyAutoSync />
       <Toaster />
     </ThemeProvider>
   </QueryClientProvider>

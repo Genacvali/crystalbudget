@@ -35,6 +35,7 @@ const Settings = () => {
   const [settingWebhook, setSettingWebhook] = useState(false);
   const [zenmoneyLinked, setZenmoneyLinked] = useState(false);
   const [zenmoneySyncing, setZenmoneySyncing] = useState(false);
+  const [zenmoneySyncType, setZenmoneySyncType] = useState<'all' | 'transactions' | null>(null);
   const [zenmoneyLastSync, setZenmoneyLastSync] = useState<string | null>(null);
   const [zenmoneyAccessToken, setZenmoneyAccessToken] = useState("");
   const [zenmoneyRefreshToken, setZenmoneyRefreshToken] = useState("");
@@ -1362,10 +1363,11 @@ const Settings = () => {
     setLoading(false);
   };
 
-  const handleSyncZenMoney = async () => {
+  const handleSyncZenMoney = async (syncType: 'all' | 'transactions' = 'all') => {
     if (!user) return;
 
     setZenmoneySyncing(true);
+    setZenmoneySyncType(syncType);
     try {
       // Get current session token
       const { data: { session } } = await supabase.auth.getSession();
@@ -1383,7 +1385,7 @@ const Settings = () => {
       // Step 1: Sync data from ZenMoney
       const SYNC_URL = `${SUPABASE_URL}/functions/v1/zenmoney-sync`;
 
-      console.log('Calling ZenMoney sync function:', SYNC_URL);
+      console.log('Calling ZenMoney sync function:', SYNC_URL, 'syncType:', syncType);
 
       const syncResponse = await fetch(SYNC_URL, {
         method: 'POST',
@@ -1392,6 +1394,7 @@ const Settings = () => {
           'Authorization': `Bearer ${session.access_token}`,
           'apikey': SUPABASE_KEY,
         },
+        body: JSON.stringify({ syncType }),
       });
 
       console.log('Sync response status:', syncResponse.status, syncResponse.statusText);
@@ -1413,40 +1416,48 @@ const Settings = () => {
       const syncData = await syncResponse.json();
       console.log('Sync success response:', syncData);
 
-      // Step 2: Auto-map categories using AI
-      toast({
-        title: "Синхронизация завершена",
-        description: `Импортировано: ${syncData.accountsCount || 0} счетов, ${syncData.transactionsCount || 0} транзакций. Сопоставляю категории...`,
-      });
-
-      const MAP_URL = `${SUPABASE_URL}/functions/v1/zenmoney-map-categories`;
-
-      try {
-        const mapResponse = await fetch(MAP_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': SUPABASE_KEY,
-          },
+      // Step 2: Auto-map categories using AI (only for full sync)
+      if (syncType === 'all') {
+        toast({
+          title: "Синхронизация завершена",
+          description: `Импортировано: ${syncData.accountsCount || 0} счетов, ${syncData.transactionsCount || 0} транзакций. Сопоставляю категории...`,
         });
 
-        if (mapResponse.ok) {
-          const mapData = await mapResponse.json();
-          console.log('AI mapping result:', mapData);
+        const MAP_URL = `${SUPABASE_URL}/functions/v1/zenmoney-map-categories`;
 
-          if (mapData.totalMapped > 0) {
-            toast({
-              title: "Категории сопоставлены",
-              description: `Автоматически сопоставлено ${mapData.totalMapped} категорий через ИИ`,
-            });
+        try {
+          const mapResponse = await fetch(MAP_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+              'apikey': SUPABASE_KEY,
+            },
+          });
+
+          if (mapResponse.ok) {
+            const mapData = await mapResponse.json();
+            console.log('AI mapping result:', mapData);
+
+            if (mapData.totalMapped > 0) {
+              toast({
+                title: "Категории сопоставлены",
+                description: `Автоматически сопоставлено ${mapData.totalMapped} категорий через ИИ`,
+              });
+            }
+          } else {
+            console.warn('AI mapping failed, but sync was successful');
           }
-        } else {
-          console.warn('AI mapping failed, but sync was successful');
+        } catch (mapError) {
+          console.warn('AI mapping error (non-critical):', mapError);
+          // Don't fail the whole sync if AI mapping fails
         }
-      } catch (mapError) {
-        console.warn('AI mapping error (non-critical):', mapError);
-        // Don't fail the whole sync if AI mapping fails
+      } else {
+        // For transactions-only sync, just show success message
+        toast({
+          title: "Синхронизация транзакций завершена",
+          description: `Импортировано: ${syncData.transactionsCount || 0} транзакций`,
+        });
       }
 
       await loadZenMoneyConnection();
@@ -1458,8 +1469,10 @@ const Settings = () => {
         title: "Ошибка синхронизации",
         description: errorMessage,
       });
+    } finally {
+      setZenmoneySyncing(false);
+      setZenmoneySyncType(null);
     }
-    setZenmoneySyncing(false);
   };
 
   const handleUnlinkZenMoney = async () => {
@@ -1781,14 +1794,26 @@ const Settings = () => {
                     Синхронизация позволяет импортировать счета, категории и транзакции из ZenMoney в CrystalBudget.
                   </p>
                 </div>
-                <Button
-                  onClick={handleSyncZenMoney}
-                  disabled={zenmoneySyncing || loading}
-                  className="w-full"
-                >
-                  <RefreshCw className={`mr-2 h-4 w-4 ${zenmoneySyncing ? 'animate-spin' : ''}`} />
-                  {zenmoneySyncing ? "Синхронизация..." : "Синхронизировать"}
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    onClick={() => handleSyncZenMoney('all')}
+                    disabled={zenmoneySyncing || loading}
+                    className="w-full"
+                    variant="default"
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${zenmoneySyncing && zenmoneySyncType === 'all' ? 'animate-spin' : ''}`} />
+                    {zenmoneySyncing && zenmoneySyncType === 'all' ? "Синхронизация всего..." : "Синхронизировать всё"}
+                  </Button>
+                  <Button
+                    onClick={() => handleSyncZenMoney('transactions')}
+                    disabled={zenmoneySyncing || loading}
+                    className="w-full"
+                    variant="outline"
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${zenmoneySyncing && zenmoneySyncType === 'transactions' ? 'animate-spin' : ''}`} />
+                    {zenmoneySyncing && zenmoneySyncType === 'transactions' ? "Синхронизация транзакций..." : "Только транзакции"}
+                  </Button>
+                </div>
                 <Button
                   onClick={handleUnlinkZenMoney}
                   disabled={loading}

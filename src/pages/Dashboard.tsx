@@ -65,6 +65,22 @@ const Dashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedDate]);
 
+  // Listen for ZenMoney sync events to refresh data
+  useEffect(() => {
+    const handleZenMoneySync = () => {
+      if (user) {
+        loadData();
+      }
+    };
+
+    window.addEventListener('zenmoney-synced', handleZenMoneySync);
+
+    return () => {
+      window.removeEventListener('zenmoney-synced', handleZenMoneySync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   // Save compact view preference
   useEffect(() => {
     localStorage.setItem('dashboard_compact_view', JSON.stringify(compactView));
