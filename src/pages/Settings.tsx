@@ -12,6 +12,7 @@ import { LogOut, Moon, Sun, Monitor, Users, Copy, UserPlus, Trash2, DollarSign, 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/hooks/useCurrency";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -41,11 +42,12 @@ const Settings = () => {
   const [zenmoneyRefreshToken, setZenmoneyRefreshToken] = useState("");
   const [zenmoneyExpiresIn, setZenmoneyExpiresIn] = useState("");
   const [zenmoneyManualMode, setZenmoneyManualMode] = useState(false);
-  const [zenmoneyCategories, setZenmoneyCategories] = useState<Array<{id: string, name: string, zenmoney_id: string | null}>>([]);
-  const [allCategories, setAllCategories] = useState<Array<{id: string, name: string}>>([]);
+  const [zenmoneyCategories, setZenmoneyCategories] = useState<Array<{ id: string, name: string, zenmoney_id: string | null }>>([]);
+  const [allCategories, setAllCategories] = useState<Array<{ id: string, name: string }>>([]);
   const [categoryMappings, setCategoryMappings] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [aiMapping, setAiMapping] = useState(false);
+  const [zenmoneySyncDaysLimit, setZenmoneySyncDaysLimit] = useState<number | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -62,7 +64,7 @@ const Settings = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const state = urlParams.get('state');
-    
+
     if (code && state && user) {
       // OAuth callback - connection should be handled by server
       // Just reload the connection status after a short delay
@@ -160,7 +162,7 @@ const Settings = () => {
 
     if (categories) {
       setAllCategories(categories);
-      
+
       // Initialize mappings
       const mappings: Record<string, string> = {};
       zmCategories?.forEach(zmCat => {
@@ -666,7 +668,7 @@ const Settings = () => {
     setLoading(true);
     try {
       console.log('Starting export via Edge Function...');
-      
+
       // Call the data-export Edge Function
       const { data, error } = await supabase.functions.invoke('data-export', {
         body: { userId: user.id }
@@ -701,7 +703,7 @@ const Settings = () => {
         description: `Экспортировано: ${exportData.metadata.totalIncomeSources} источников, ${exportData.metadata.totalCategories} категорий, ${exportData.metadata.totalAllocations} настроек бюджета, ${exportData.metadata.totalIncomes} доходов, ${exportData.metadata.totalExpenses} расходов`,
       });
 
-      console.log('Export - Expenses by user:', 
+      console.log('Export - Expenses by user:',
         exportData.expenses.reduce((acc: Record<string, number>, exp: any) => {
           const uid = exp.user_id || 'unknown';
           acc[uid] = (acc[uid] || 0) + 1;
@@ -709,7 +711,7 @@ const Settings = () => {
         }, {})
       );
 
-      console.log('Export - Incomes by user:', 
+      console.log('Export - Incomes by user:',
         exportData.incomes.reduce((acc: Record<string, number>, inc: any) => {
           const uid = inc.user_id || 'unknown';
           acc[uid] = (acc[uid] || 0) + 1;
@@ -806,7 +808,7 @@ const Settings = () => {
           .from("income_sources")
           .insert(sourcesToInsert)
           .select();
-        
+
         if (sourceError) throw new Error(`Ошибка импорта источников: ${sourceError.message}`);
 
         if (insertedSources) {
@@ -854,9 +856,9 @@ const Settings = () => {
         const allocationsToInsert = categoryAllocations.map((a: any) => {
           const newCatId = categoryIdMap[a.category_id];
           const newSourceId = a.income_source_id ? sourceIdMap[a.income_source_id] : null;
-          
+
           if (!newCatId || !newSourceId) return null;
-          
+
           return {
             category_id: newCatId,
             income_source_id: newSourceId,
@@ -1237,7 +1239,7 @@ const Settings = () => {
       // Запрос токенов через Zero App API
       // Замените URL на актуальный endpoint Zero App API
       const zeroAppApiUrl = import.meta.env.VITE_ZERO_APP_API_URL || 'https://api.zeroapp.ru/zenmoney/tokens';
-      
+
       const response = await fetch(zeroAppApiUrl, {
         method: 'POST',
         headers: {
@@ -1258,7 +1260,7 @@ const Settings = () => {
         setZenmoneyAccessToken(tokenData.access_token);
         setZenmoneyRefreshToken(tokenData.refresh_token || '');
         setZenmoneyExpiresIn(tokenData.expires_in?.toString() || '');
-        
+
         toast({
           title: "Токены получены",
           description: "Токены успешно получены из Zero App API",
@@ -1317,6 +1319,7 @@ const Settings = () => {
           access_token: zenmoneyAccessToken,
           refresh_token: zenmoneyRefreshToken || undefined,
           expires_in: zenmoneyExpiresIn ? parseInt(zenmoneyExpiresIn) : undefined,
+          sync_days_limit: zenmoneySyncDaysLimit,
         }),
       });
 
@@ -1543,6 +1546,74 @@ const Settings = () => {
       console.error('Logout error:', err);
       // Force redirect anyway
       window.location.href = "/auth";
+    }
+  };
+
+  // Add new function for reset
+  const handleResetZenMoneySync = async () => {
+    try {
+      setLoading(true);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Ошибка",
+          description: "Необходимо войти в систему",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!SUPABASE_URL || !SUPABASE_KEY) {
+        toast({
+          title: "Ошибка",
+          description: "Конфигурация Supabase не настроена",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Call Edge Function to reset sync state
+      const RESET_URL = `${SUPABASE_URL}/functions/v1/zenmoney-reset-sync`;
+
+      const response = await fetch(RESET_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': SUPABASE_KEY,
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "Синхронизация сброшена",
+          description: `Теперь будут загружаться только новые транзакции. Последняя синхронизация: ${result.lastSyncAt || 'никогда'}`,
+        });
+
+        // Optionally trigger initial sync
+        handleSyncZenMoney('all');
+      } else {
+        const errorText = await response.text();
+        toast({
+          title: "Ошибка сброса",
+          description: errorText,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error resetting ZenMoney sync:', error);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось сбросить синхронизацию",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1788,31 +1859,14 @@ const Settings = () => {
                       Последняя синхронизация: {new Date(zenmoneyLastSync).toLocaleString('ru-RU')}
                     </p>
                   )}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    Синхронизация позволяет импортировать счета, категории и транзакции из ZenMoney в CrystalBudget.
+                  <p className="text-xs text-muted-foreground mt-2">
+                    🔄 Автоматическая синхронизация каждую минуту
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Button
-                    onClick={() => handleSyncZenMoney('all')}
-                    disabled={zenmoneySyncing || loading}
-                    className="w-full"
-                    variant="default"
-                  >
-                    <RefreshCw className={`mr-2 h-4 w-4 ${zenmoneySyncing && zenmoneySyncType === 'all' ? 'animate-spin' : ''}`} />
-                    {zenmoneySyncing && zenmoneySyncType === 'all' ? "Синхронизация всего..." : "Синхронизировать всё"}
-                  </Button>
-                  <Button
-                    onClick={() => handleSyncZenMoney('transactions')}
-                    disabled={zenmoneySyncing || loading}
-                    className="w-full"
-                    variant="outline"
-                  >
-                    <RefreshCw className={`mr-2 h-4 w-4 ${zenmoneySyncing && zenmoneySyncType === 'transactions' ? 'animate-spin' : ''}`} />
-                    {zenmoneySyncing && zenmoneySyncType === 'transactions' ? "Синхронизация транзакций..." : "Только транзакции"}
-                  </Button>
+                  <p className="text-sm text-muted-foreground">
+                    Данные автоматически синхронизируются с ZenMoney. Счета, категории и транзакции обновляются каждую минуту.
+                  </p>
                 </div>
                 <Button
                   onClick={handleUnlinkZenMoney}
@@ -1834,6 +1888,58 @@ const Settings = () => {
                     <li>Импорт категорий расходов</li>
                     <li>Импорт транзакций</li>
                   </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Период синхронизации</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Выберите, за сколько дней загружать транзакции
+                  </p>
+                  <div className="grid grid-cols-4 gap-2">
+                    <Button
+                      type="button"
+                      variant={zenmoneySyncDaysLimit === 1 ? "default" : "outline"}
+                      onClick={() => setZenmoneySyncDaysLimit(1)}
+                      className="h-16 flex-col gap-1"
+                    >
+                      <span className="text-lg font-bold">1</span>
+                      <span className="text-xs">день</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={zenmoneySyncDaysLimit === 7 ? "default" : "outline"}
+                      onClick={() => setZenmoneySyncDaysLimit(7)}
+                      className="h-16 flex-col gap-1"
+                    >
+                      <span className="text-lg font-bold">7</span>
+                      <span className="text-xs">дней</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={zenmoneySyncDaysLimit === 30 ? "default" : "outline"}
+                      onClick={() => setZenmoneySyncDaysLimit(30)}
+                      className="h-16 flex-col gap-1"
+                    >
+                      <span className="text-lg font-bold">30</span>
+                      <span className="text-xs">дней</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={zenmoneySyncDaysLimit === null ? "default" : "outline"}
+                      onClick={() => setZenmoneySyncDaysLimit(null)}
+                      className="h-16 flex-col gap-1"
+                    >
+                      <span className="text-lg font-bold">∞</span>
+                      <span className="text-xs">все</span>
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {zenmoneySyncDaysLimit === null
+                      ? "📚 Будут загружены все транзакции из истории"
+                      : zenmoneySyncDaysLimit === 1
+                        ? "⚡ Будут загружены только транзакции за сегодня"
+                        : `📅 Будут загружены транзакции за последние ${zenmoneySyncDaysLimit} дней`}
+                  </p>
                 </div>
 
                 <div className="flex gap-2">
@@ -1866,54 +1972,23 @@ const Settings = () => {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="zenmoneyAccessToken">Access Token *</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="zenmoneyAccessToken"
-                          type="password"
-                          value={zenmoneyAccessToken}
-                          onChange={(e) => setZenmoneyAccessToken(e.target.value)}
-                          placeholder="Введите Access Token из Zero App"
-                          className="flex-1"
-                        />
-                        <Button
-                          onClick={handleRequestZeroAppTokens}
-                          disabled={loading}
-                          variant="outline"
-                          type="button"
-                        >
-                          Запросить API
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Получите токен через Zero App API или введите вручную
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="zenmoneyRefreshToken">Refresh Token (опционально)</Label>
                       <Input
-                        id="zenmoneyRefreshToken"
+                        id="zenmoneyAccessToken"
                         type="password"
-                        value={zenmoneyRefreshToken}
-                        onChange={(e) => setZenmoneyRefreshToken(e.target.value)}
-                        placeholder="Введите Refresh Token"
+                        value={zenmoneyAccessToken}
+                        onChange={(e) => setZenmoneyAccessToken(e.target.value)}
+                        placeholder="Введите Access Token из Zero App"
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="zenmoneyExpiresIn">Expires In (секунды, опционально)</Label>
-                      <Input
-                        id="zenmoneyExpiresIn"
-                        type="number"
-                        value={zenmoneyExpiresIn}
-                        onChange={(e) => setZenmoneyExpiresIn(e.target.value)}
-                        placeholder="Время жизни токена в секундах"
-                      />
+                      <p className="text-xs text-muted-foreground">
+                        Получите токен в Zero App (zenmoney.ru/api) и вставьте сюда
+                      </p>
                     </div>
                     <Button
                       onClick={handleSaveZenMoneyTokens}
                       disabled={loading || !zenmoneyAccessToken}
                       className="w-full"
                     >
-                      {loading ? "Сохранение..." : "Сохранить токены"}
+                      {loading ? "Сохранение..." : "Сохранить токен"}
                     </Button>
                   </div>
                 )}
@@ -1942,7 +2017,7 @@ const Settings = () => {
                 {zenmoneyCategories.map((zmCategory) => {
                   const currentMapping = categoryMappings[zmCategory.zenmoney_id || ''];
                   const isMapped = currentMapping === zmCategory.id;
-                  
+
                   return (
                     <div key={zmCategory.id} className="flex items-center gap-3 p-3 border rounded-lg">
                       <div className="flex-1">
@@ -2234,7 +2309,7 @@ const Settings = () => {
             <p className="text-xs text-muted-foreground">
               Импорт заменит все существующие данные. Используйте файл, экспортированный из CrystalBudget.
             </p>
-            
+
             {zenmoneyLinked && (
               <div className="space-y-2 pt-2 border-t">
                 <p className="text-sm font-medium">Очистка данных ZenMoney</p>

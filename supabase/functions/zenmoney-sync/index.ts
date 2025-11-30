@@ -81,7 +81,7 @@ async function categorizeTransactionWithAI(
         }
 
         const categoriesText = categories.map((c: any) => `${c.icon} ${c.name}`).join(', ');
-        const sourcesText = incomeSources && incomeSources.length > 0 
+        const sourcesText = incomeSources && incomeSources.length > 0
             ? incomeSources.map((s: any) => s.name).join(', ')
             : '';
 
@@ -163,7 +163,7 @@ ${sourcesText ? `Доступные источники дохода: ${sourcesTe
 
         if (result.type === 'expense' && result.category) {
             // Find category by name
-            const category = categories.find((c: any) => 
+            const category = categories.find((c: any) =>
                 c.name.toLowerCase() === result.category.toLowerCase() ||
                 c.name.toLowerCase().includes(result.category.toLowerCase()) ||
                 result.category.toLowerCase().includes(c.name.toLowerCase())
@@ -173,7 +173,7 @@ ${sourcesText ? `Доступные источники дохода: ${sourcesTe
             }
         } else if (result.type === 'income' && result.source && incomeSources) {
             // Find income source by name
-            const source = incomeSources.find((s: any) => 
+            const source = incomeSources.find((s: any) =>
                 s.name.toLowerCase() === result.source.toLowerCase() ||
                 s.name.toLowerCase().includes(result.source.toLowerCase()) ||
                 result.source.toLowerCase().includes(s.name.toLowerCase())
@@ -200,90 +200,108 @@ async function sendUncategorizedTransactionToTelegram(
     supabase: any,
     userId: string,
     expense: any,
-    zenmoneyUser?: number // Optional: ZenMoney user ID to identify transaction owner
+    zenmoneyUser?: number
 ) {
     console.log('🚀 Starting sendUncategorizedTransactionToTelegram for userId:', userId, 'expenseId:', expense.id);
-    
+
     const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
-    console.log('🔑 TELEGRAM_BOT_TOKEN available:', !!TELEGRAM_BOT_TOKEN);
-    
     if (!TELEGRAM_BOT_TOKEN) {
-        console.log('❌ No TELEGRAM_BOT_TOKEN, skipping Telegram notification');
+        console.log('❌ No TELEGRAM_BOT_TOKEN, skipping');
         return;
     }
 
     try {
-        // Get family ID for the user
-        console.log('👥 Looking for family members with Telegram...');
-        
-        // First, try to get family_id if user is an owner
+        // Get family ID safely
+        let familyId: string | null = null;
+
+        // Check if user is family owner
         const { data: ownedFamily } = await supabase
             .from('families')
             .select('id')
             .eq('owner_id', userId)
             .maybeSingle();
-        
-        let familyId: string | null = null;
-        
+
         if (ownedFamily?.id) {
             familyId = ownedFamily.id;
-            console.log('👤 User is family owner, family_id:', familyId);
         } else {
-            // If not owner, check if user is a family member
+            // Check if user is family member
             const { data: familyMember } = await supabase
                 .from('family_members')
                 .select('family_id')
                 .eq('user_id', userId)
                 .maybeSingle();
-            
+
             if (familyMember?.family_id) {
                 familyId = familyMember.family_id;
-                console.log('👤 User is family member, family_id:', familyId);
-            } else {
-                console.log('👤 User is not in a family');
             }
         }
 
-        // Get family members if user is in a family
+        // Get family members if in family
         let familyMemberUserIds: string[] = [];
         if (familyId) {
-            const { data: familyMembers, error: familyError } = await supabase
+            const { data: familyMembers } = await supabase
                 .from('family_members')
                 .select('user_id')
                 .eq('family_id', familyId);
 
-            if (familyError) {
-                console.error('❌ Error fetching family members:', familyError);
-                // Continue anyway, just send to current user
-            } else {
-                familyMemberUserIds = familyMembers?.map((m: any) => m.user_id) || [];
-                console.log('👥 Found family members:', familyMemberUserIds);
-            }
+            familyMemberUserIds = familyMembers?.map((m: any) => m.user_id) || [];
         }
 
-        // Get Telegram users for family members (including current user)
+        // Get Telegram users (current user + family)
         const targetUserIds = [userId, ...familyMemberUserIds];
-        console.log('📱 Target user IDs for Telegram:', targetUserIds);
-
-        const { data: telegramUsers, error: telegramError } = await supabase
+        const { data: telegramUsers } = await supabase
             .from('telegram_users')
             .select('telegram_id')
             .in('user_id', targetUserIds);
 
-        if (telegramError) {
-            console.error('❌ Error fetching telegram_users:', telegramError);
+        if (!telegramUsers?.length) {
+            console.log('⚠️ No Telegram users found, skipping notification');
             return;
         }
 
-        console.log('📱 Found telegram users:', telegramUsers?.length || 0, telegramUsers?.map((t: any) => t.telegram_id) || []);
+        // Get user's categories for buttons
+        const { data: categories } = await supabase
+            .from('categories')
+            .select('id, name, icon')
+            .eq('user_id', userId)
+            .order('name');
 
-        if (!telegramUsers || telegramUsers.length === 0) {
-            console.log('⚠️ No telegram users found for family, skipping notification');
-            return;
+        // Get AI recommendation
+        let aiRecommendation = null;
+        let aiCategoryId = null;
+        try {
+            // Create mock transaction for AI
+            const mockTx = {
+                id: expense.zenmoney_id || expense.id,
+                payee: expense.description,
+                comment: expense.description,
+                outcome: Number(expense.amount),
+                income: 0,
+                date: expense.date,
+                tag: [],
+                merchant: expense.description,
+                user: zenmoneyUser || 0,
+                changed: Date.now(),
+                deleted: false,
+                incomeInstrument: 0,
+                incomeAccount: '',
+                outcomeInstrument: 0,
+                outcomeAccount: ''
+            } as any;
+
+            const aiResult = await categorizeTransactionWithAI(supabase, userId, mockTx);
+            if (aiResult.categoryId) {
+                const category = categories?.find(c => c.id === aiResult.categoryId);
+                if (category) {
+                    aiRecommendation = `${category.icon} ${category.name}`;
+                    aiCategoryId = category.id;
+                }
+            }
+        } catch (error) {
+            console.log('AI recommendation failed:', error);
         }
 
-        // Prepare message (using HTML to avoid Markdown parsing issues)
-        const zenmoneyUserInfo = zenmoneyUser ? ` (ZenMoney User: ${zenmoneyUser})` : '';
+        // HTML escape function
         const escapeHtml = (text: string) => {
             return String(text)
                 .replace(/&/g, '&amp;')
@@ -292,66 +310,111 @@ async function sendUncategorizedTransactionToTelegram(
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
         };
-        
+
+        // Prepare message
+        const zenmoneyUserInfo = zenmoneyUser ? ` (ZenMoney User: ${zenmoneyUser})` : '';
         const message = `🔔 <b>Новая некатегоризированная транзакция</b>${zenmoneyUserInfo}
 
 💰 Сумма: <b>${escapeHtml(String(expense.amount))} ₽</b>
 📅 Дата: <b>${escapeHtml(String(expense.date))}</b>
 📝 Описание: <b>${escapeHtml(String(expense.description || ''))}</b>
-🔗 ID транзакции: <code>${escapeHtml(String(expense.id))}</code>
+🔗 ID: <code>${escapeHtml(String(expense.id))}</code>
 
-Пожалуйста, категоризируйте её в приложении!`;
+<b>Выберите категорию:</b>`;
+
+        // Create inline keyboard
+        const inlineKeyboard: any[] = [];
+
+        // Category buttons (3 per row)
+        const categoriesPerRow = 3;
+        for (let i = 0; i < (categories?.length || 0); i += categoriesPerRow) {
+            const row: any[] = [];
+            for (let j = 0; j < categoriesPerRow && i + j < (categories?.length || 0); j++) {
+                const cat = categories[i + j];
+                row.push({
+                    text: `${cat.icon} ${cat.name}`,
+                    callback_data: `zen_cat_${expense.id}_${cat.id}`
+                });
+            }
+            if (row.length > 0) {
+                inlineKeyboard.push(row);
+            }
+        }
+
+        // AI recommendation button
+        if (aiRecommendation) {
+            inlineKeyboard.push([{
+                text: `🤖 ИИ рекомендует: ${aiRecommendation}`,
+                callback_data: `zen_ai_${expense.id}_${aiCategoryId}`
+            }]);
+        }
+
+        // Action buttons
+        inlineKeyboard.push([
+            {
+                text: '⏭️ Игнорировать',
+                callback_data: `zen_ignore_${expense.id}`
+            },
+            {
+                text: '❌ Закрыть',
+                callback_data: `zen_close_${expense.id}`
+            }
+        ]);
+
+        const replyMarkup = {
+            inline_keyboard: inlineKeyboard
+        };
 
         // Send to each Telegram user
         for (const telegramUser of telegramUsers) {
-            // Ensure telegram_id is a number (bigint), not UUID
             let chatId: number;
             if (typeof telegramUser.telegram_id === 'string') {
-                // If it's a string, try to parse it as number
                 const parsed = parseInt(telegramUser.telegram_id, 10);
                 if (isNaN(parsed)) {
-                    console.error(`❌ Invalid telegram_id format (UUID instead of number): ${telegramUser.telegram_id}`);
-                    continue; // Skip this user
+                    console.error(`❌ Invalid telegram_id: ${telegramUser.telegram_id}`);
+                    continue;
                 }
                 chatId = parsed;
             } else {
                 chatId = Number(telegramUser.telegram_id);
             }
-            
+
             try {
-                console.log(`📤 Sending message to Telegram chat_id: ${chatId}...`);
-                
+                console.log(`📤 Sending inline keyboard message to chat_id: ${chatId}`);
+
                 const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         chat_id: chatId,
                         text: message,
                         parse_mode: 'HTML',
+                        reply_markup: replyMarkup
                     }),
                 });
 
                 const result = await response.json();
-                console.log(`📤 Telegram response for chat_id ${chatId}:`, {
-                    ok: result.ok,
-                    error_code: result.error_code,
-                    description: result.description,
-                    chat: result.result?.chat?.id
-                });
+                if (response.ok && result.ok) {
+                    console.log(`✅ Sent inline keyboard to ${chatId}, message_id: ${result.result.message_id}`);
 
-                if (!response.ok || !result.ok) {
-                    console.error(`❌ Failed to send Telegram message to chat_id ${chatId}:`, JSON.stringify(result));
+                    // Save message for callback handling
+                    await supabase
+                        .from('telegram_messages')
+                        .upsert({
+                            expense_id: expense.id,
+                            telegram_chat_id: chatId,
+                            telegram_message_id: result.result.message_id,
+                            created_at: new Date().toISOString()
+                        }, { onConflict: 'expense_id,telegram_chat_id' });
                 } else {
-                    console.log(`✅ Successfully sent Telegram message to chat_id ${chatId}`);
+                    console.error(`❌ Failed to send to ${chatId}:`, result);
                 }
             } catch (error) {
-                console.error(`❌ Error sending Telegram message to chat_id ${chatId}:`, error);
+                console.error(`❌ Error sending to ${chatId}:`, error);
             }
         }
 
-        console.log('✅ Completed sendUncategorizedTransactionToTelegram');
+        console.log('✅ Completed Telegram notification with inline keyboard');
     } catch (error) {
         console.error('💥 Error in sendUncategorizedTransactionToTelegram:', error);
     }
@@ -395,9 +458,10 @@ async function syncWithZenMoney(
     userId: string,
     accessToken: string,
     serverTimestamp: number,
-    syncType: 'all' | 'transactions' = 'all'
+    syncType: 'all' | 'transactions' = 'all',
+    syncDaysLimit: number | null = null
 ) {
-    console.log(`🔄 Starting ZenMoney sync: type=${syncType}, serverTimestamp=${serverTimestamp} (${serverTimestamp === 0 ? 'initial sync - will fetch ALL data' : `incremental sync - will fetch only NEW transactions since ${new Date(serverTimestamp * 1000).toISOString()}`})`)
+    console.log(`🔄 Starting ZenMoney sync: type=${syncType}, serverTimestamp=${serverTimestamp}, syncDaysLimit=${syncDaysLimit} (${serverTimestamp === 0 ? 'initial sync - will fetch data' : `incremental sync - will fetch only NEW transactions since ${new Date(serverTimestamp * 1000).toISOString()}`})`)
     const currentTimestamp = Math.floor(Date.now() / 1000)
 
     const requestBody: ZenMoneyDiffObject = {
@@ -457,7 +521,7 @@ async function syncWithZenMoney(
             // Determine if tag is for expense (category) or income (source)
             // In ZenMoney, a tag can be both, but usually users separate them
             // We'll treat showIncome=true as potential Income Source and showOutcome=true as potential Expense Category
-            
+
             // 1. Handle Expense Categories (showOutcome=true or both false/undefined)
             if (tag.showOutcome !== false) {
                 // Check if category already exists by zenmoney_id
@@ -560,7 +624,24 @@ async function syncWithZenMoney(
     // Process transactions (always process, regardless of syncType)
     if (data.transaction && data.transaction.length > 0) {
         console.log(`💳 Processing ${data.transaction.length} transactions from ZenMoney`)
-        
+
+        // Filter transactions by date if syncDaysLimit is specified
+        let transactionsToProcess = data.transaction as ZenMoneyTransaction[];
+        if (syncDaysLimit && syncDaysLimit > 0) {
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - syncDaysLimit);
+            const cutoffDateStr = cutoffDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+            const originalCount = transactionsToProcess.length;
+            transactionsToProcess = transactionsToProcess.filter(tx => tx.date >= cutoffDateStr);
+
+            const filtered = originalCount - transactionsToProcess.length;
+            if (filtered > 0) {
+                console.log(`📅 Filtered out ${filtered} transactions older than ${syncDaysLimit} days (before ${cutoffDateStr})`);
+            }
+            console.log(`📥 Will process ${transactionsToProcess.length} transactions within the last ${syncDaysLimit} days`);
+        }
+
         // Statistics counters
         let expensesCreated = 0
         let expensesSkipped = 0
@@ -569,8 +650,8 @@ async function syncWithZenMoney(
         let incomesSkipped = 0
         let incomesUpdated = 0
         let transfersSkipped = 0
-        
-        for (const tx of data.transaction as ZenMoneyTransaction[]) {
+
+        for (const tx of transactionsToProcess) {
             if (tx.deleted) {
                 // Delete transaction
                 await supabase
@@ -613,7 +694,7 @@ async function syncWithZenMoney(
                 transfersSkipped++
                 continue
             }
-            
+
             // If transfer but has tags, treat as expense (outcome) or income based on which is larger
             // This handles cases where user manually categorized a transfer-like transaction
 
@@ -773,13 +854,13 @@ async function syncWithZenMoney(
                     })
                     .select()
                     .single()
-                
+
                 if (insertedIncome) {
                     incomesCreated++
                 }
             }
         }
-        
+
         // Log statistics
         console.log(`📊 Transaction processing statistics:`)
         console.log(`   ✅ Expenses: ${expensesCreated} created, ${expensesUpdated} updated, ${expensesSkipped} skipped (duplicates)`)
@@ -884,8 +965,15 @@ serve(async (req) => {
             .update({ sync_status: 'syncing' })
             .eq('user_id', user.id)
 
-        // Perform sync
-        const result = await syncWithZenMoney(supabase, user.id, accessToken, serverTimestamp, syncType)
+        // Perform sync with sync_days_limit from connection
+        const result = await syncWithZenMoney(
+            supabase,
+            user.id,
+            accessToken,
+            serverTimestamp,
+            syncType,
+            connection.sync_days_limit || null
+        )
 
         return new Response(
             JSON.stringify({

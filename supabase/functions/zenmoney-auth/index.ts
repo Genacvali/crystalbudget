@@ -51,7 +51,7 @@ serve(async (req) => {
             }
 
             const body = await req.json()
-            const { access_token, refresh_token, expires_in } = body
+            const { access_token, refresh_token, expires_in, sync_days_limit } = body
 
             if (!access_token) {
                 return new Response(
@@ -96,6 +96,7 @@ serve(async (req) => {
                     refresh_token: refresh_token || '', // Optional
                     token_type: 'bearer',
                     expires_at: expiresAt,
+                    sync_days_limit: sync_days_limit ?? null, // Save sync period
                 })
 
             if (dbError) {
