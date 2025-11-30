@@ -65,7 +65,9 @@ const Dashboard = () => {
     currency?: string;
     updated_at?: string;
   }>>([]);
-  const [isZenMoneyConnected, setIsZenMoneyConnected] = useState(false);
+  const [isZenMoneyConnected, setIsZenMoneyConnected] = useState(() => {
+    return localStorage.getItem('isZenMoneyConnected') === 'true';
+  });
   useEffect(() => {
     if (user) {
       loadData();
@@ -283,61 +285,73 @@ const Dashboard = () => {
         })));
       }
 
-      // If connected but no accounts found, trigger a sync in background and poll for updates
-      if (isZenMoneyConnected && (!zenmoneyAccountsData || zenmoneyAccountsData.length === 0)) {
-        console.log('ZenMoney connected but no accounts found. Triggering sync...');
+      // Check if we need to sync (if accounts are missing OR older than 1 hour)
+      let shouldSync = false;
 
+      if (isZenMoneyConnected) {
+        if (!zenmoneyAccountsData || zenmoneyAccountsData.length === 0) {
+          console.log('ZenMoney connected but no accounts found. Triggering sync...');
+          shouldSync = true;
+        } else {
+          // Check age of data
+          // We assume all accounts are updated roughly at the same time
+          const lastUpdate = new Date(zenmoneyAccountsData[0].updated_at);
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+          if (lastUpdate < oneHourAgo) {
+            console.log('ZenMoney data is stale (>1h), triggering background sync...');
+            shouldSync = true;
+          }
+        }
+      }
+
+      if (shouldSync) {
         // Trigger sync and handle response
         supabase.functions.invoke('zenmoney-sync', {
           body: { syncType: 'all' }
         }).then(({ data, error }) => {
           if (!error && data && data.accounts && data.accounts.length > 0) {
-            console.log('✅ Received accounts directly from sync:', data.accounts);
+            console.log('✅ Received updated accounts from sync:', data.accounts);
             setZenmoneyAccounts(data.accounts.map((acc: any) => ({
-              id: acc.id, // Note: ZenMoney API returns 'id', DB has 'zenmoney_account_id'. We need to map correctly if we use DB IDs later, but for display 'id' is fine or we can generate one.
-              // Actually, for display we just need balance and title.
-              // Let's match the structure we expect from DB
+              id: acc.id,
               title: acc.title,
               balance: Number(acc.balance),
               currency: 'RUB',
               updated_at: new Date().toISOString()
             })));
-
-            toast({
-              title: "Баланс обновлен",
-              description: "Данные о счетах успешно загружены из ZenMoney",
-            });
           }
         });
 
-        // Poll for accounts as backup (in case sync takes longer or returns nothing but saves to DB)
-        let attempts = 0;
-        const maxAttempts = 15;
-        const pollInterval = setInterval(async () => {
-          attempts++;
-          console.log(`Polling for accounts (attempt ${attempts}/${maxAttempts})...`);
+        // Poll for accounts as backup only if we have NO data initially
+        if (!zenmoneyAccountsData || zenmoneyAccountsData.length === 0) {
+          let attempts = 0;
+          const maxAttempts = 15;
+          const pollInterval = setInterval(async () => {
+            attempts++;
+            console.log(`Polling for accounts (attempt ${attempts}/${maxAttempts})...`);
 
-          const { data: newAccounts } = await (supabase as any)
-            .from('zenmoney_accounts')
-            .select('*')
-            .in('user_id', familyUserIds)
-            .eq('archive', false);
+            const { data: newAccounts } = await (supabase as any)
+              .from('zenmoney_accounts')
+              .select('*')
+              .in('user_id', familyUserIds)
+              .eq('archive', false);
 
-          if (newAccounts && newAccounts.length > 0) {
-            console.log('Accounts found in DB!', newAccounts);
-            setZenmoneyAccounts(newAccounts.map((acc: any) => ({
-              id: acc.id,
-              title: acc.title,
-              balance: Number(acc.balance),
-              currency: 'RUB',
-              updated_at: acc.updated_at
-            })));
-            clearInterval(pollInterval);
-          } else if (attempts >= maxAttempts) {
-            console.log('Stopped polling for accounts.');
-            clearInterval(pollInterval);
-          }
-        }, 2000);
+            if (newAccounts && newAccounts.length > 0) {
+              console.log('Accounts found in DB!', newAccounts);
+              setZenmoneyAccounts(newAccounts.map((acc: any) => ({
+                id: acc.id,
+                title: acc.title,
+                balance: Number(acc.balance),
+                currency: 'RUB',
+                updated_at: acc.updated_at
+              })));
+              clearInterval(pollInterval);
+            } else if (attempts >= maxAttempts) {
+              console.log('Stopped polling for accounts.');
+              clearInterval(pollInterval);
+            }
+          }, 2000);
+        }
       }
 
       // Calculate category debts from previous month
@@ -985,7 +999,11 @@ const Dashboard = () => {
         />
         <SummaryCard
           title={isZenMoneyConnected ? "Фактический баланс" : "Общий баланс"}
-          value={formatAmount(isZenMoneyConnected && hasZenMoneyAccounts ? actualBalance : totalBalance)}
+          value={
+            isZenMoneyConnected
+              ? (hasZenMoneyAccounts ? formatAmount(actualBalance) : "...")
+              : formatAmount(totalBalance)
+          }
           subtitle={
             isZenMoneyConnected
               ? (hasZenMoneyAccounts
