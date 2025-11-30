@@ -16,13 +16,12 @@ import { QuickGuide } from "@/components/QuickGuide";
 import { TelegramGuide } from "@/components/TelegramGuide";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
-// import { PullToRefresh } from "@/components/PullToRefresh";
 import { useAuth } from "@/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
-import { IncomeSource, Category, SourceSummary, CategoryBudget } from "@/types/budget";
+import { IncomeSource, Category, CategoryAllocation, Income, Expense, SourceSummary, CategoryBudget } from "@/types/budget";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 const Dashboard = () => {
@@ -41,8 +40,8 @@ const Dashboard = () => {
   const { createNotification } = useNotifications();
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [incomes, setIncomes] = useState<Array<{ id: string; source_id: string; amount: number; date: string; description?: string }>>([]);
-  const [expenses, setExpenses] = useState<Array<{ id: string; category_id: string; amount: number; date: string; description?: string }>>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -218,7 +217,7 @@ const Dashboard = () => {
       if (allocationsError) throw allocationsError;
       const mappedCategories: Category[] = (categoriesData || []).map(item => {
         const categoryAllocations = (allocationsData || []).filter(alloc => alloc.category_id === item.id).map(alloc => {
-          const currency = alloc.currency || 'RUB';
+          const currency = (alloc as any).currency || 'RUB';
           // Debug: log currency for categories with multiple currencies
           if (item.name === 'Красота' || item.name === 'просто так') {
             console.log(`Category ${item.name} allocation: currency=${currency}, value=${alloc.allocation_value}`);
@@ -259,8 +258,8 @@ const Dashboard = () => {
       if (expensesError) throw expensesError;
       setExpenses(expensesData || []);
 
-      // Check if ZenMoney is connected
-      const { data: zenmoneyConnection } = await supabase
+      // Check if ZenMoney is connected  
+      const { data: zenmoneyConnection } = await (supabase as any)
         .from('zenmoney_connections')
         .select('id')
         .eq('user_id', user!.id)
