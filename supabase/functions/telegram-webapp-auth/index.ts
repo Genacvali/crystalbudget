@@ -223,7 +223,8 @@ Deno.serve(async (req) => {
       type: 'magiclink',
       email: userData.user.email!,
       options: {
-        redirectTo: 'https://crystalbudget.net/'
+        // IMPORTANT: must match the actual origin used in Telegram WebApp (window.location.origin)
+        redirectTo: 'https://www.crystalbudget.net/'
       }
     });
 
