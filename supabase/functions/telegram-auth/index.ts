@@ -25,21 +25,21 @@ interface TelegramUser {
 // Verify Telegram authentication data
 async function verifyTelegramAuth(telegramUser: TelegramUser): Promise<boolean> {
   const { hash, ...data } = telegramUser;
-  
+
   // Create data-check-string
   const dataCheckArr = Object.keys(data)
     .filter(key => data[key as keyof typeof data] !== undefined)
     .sort()
     .map(key => `${key}=${data[key as keyof typeof data]}`)
     .join('\n');
-  
+
   console.log('Data check string:', dataCheckArr);
-  
+
   try {
     // Create secret key from bot token using SHA-256 hash
     const encoder = new TextEncoder();
     const tokenHash = await crypto.subtle.digest('SHA-256', encoder.encode(TELEGRAM_BOT_TOKEN));
-    
+
     // Import the hashed token as HMAC key
     const secretKey = await crypto.subtle.importKey(
       'raw',
@@ -48,16 +48,16 @@ async function verifyTelegramAuth(telegramUser: TelegramUser): Promise<boolean> 
       false,
       ['sign']
     );
-    
+
     // Calculate HMAC
     const signature = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(dataCheckArr));
     const hexHash = Array.from(new Uint8Array(signature))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
-    
+
     console.log('Calculated hash:', hexHash);
     console.log('Received hash:', hash);
-    
+
     return hexHash === hash;
   } catch (error) {
     console.error('Error verifying Telegram auth:', error);
@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
 
     // Get user's email for generating auth link
     const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
-    
+
     if (userError || !userData) {
       console.error('Error fetching user:', userError);
       return new Response(
@@ -169,12 +169,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Generate OTP for passwordless login
     const { data: otpData, error: otpError } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email: userData.user.email!,
       options: {
-        redirectTo: 'https://crystalbudget.net/'
+        redirectTo: 'https://www.crystalbudget.net/'
       }
     });
 
@@ -190,7 +189,7 @@ Deno.serve(async (req) => {
 
     // Return the magic link URL - client will navigate to it for auto-login
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         magic_link: otpData.properties.action_link
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

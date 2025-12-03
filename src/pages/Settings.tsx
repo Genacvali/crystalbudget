@@ -64,15 +64,22 @@ const Settings = () => {
   const loadTelegramConnection = async () => {
     if (!user) return;
 
+    console.log('Loading Telegram connection for user:', user.id);
+
     const { data, error } = await supabase
       .from("telegram_users")
       .select("telegram_username, telegram_first_name")
       .eq("user_id", user.id)
       .maybeSingle();
 
+    console.log('Telegram query result:', { data, error });
+
     if (!error && data) {
+      console.log('Setting Telegram linked to true');
       setTelegramLinked(true);
       setTelegramUsername(data.telegram_username || data.telegram_first_name || "");
+    } else {
+      console.log('Telegram not linked or error:', error);
     }
   };
 
