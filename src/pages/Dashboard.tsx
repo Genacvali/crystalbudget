@@ -49,8 +49,8 @@ const Dashboard = () => {
   const [quickGuideOpen, setQuickGuideOpen] = useState(false);
   const [telegramGuideOpen, setTelegramGuideOpen] = useState(false);
   const [carryOverBalance, setCarryOverBalance] = useState(0);
-  const [categoryDebts, setCategoryDebts] = useState<Record<string, number>>({});
-  const [categoryCarryOvers, setCategoryCarryOvers] = useState<Record<string, number>>({});
+  const [categoryDebts, setCategoryDebts] = useState<Record<string, Record<string, number>>>({});
+  const [categoryCarryOvers, setCategoryCarryOvers] = useState<Record<string, Record<string, number>>>({});
   const [categorySortBy, setCategorySortBy] = useState<"name" | "spent" | "remaining">("name");
   const [compactView, setCompactView] = useState(() => {
     const saved = localStorage.getItem('dashboard_compact_view');
@@ -369,58 +369,99 @@ const Dashboard = () => {
       } = await supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', previousMonthStart).lte('date', previousMonthEnd);
       if (previousExpensesError) throw previousExpensesError;
 
-      // Calculate debts and carry-overs for each category from previous month
-      const debts: Record<string, number> = {};
-      const carryOvers: Record<string, number> = {};
+      // Calculate debts and carry-overs for each category from previous month (by currency)
+      const debts: Record<string, Record<string, number>> = {};
+      const carryOvers: Record<string, Record<string, number>> = {};
       console.log('Previous month range:', previousMonthStart, '-', previousMonthEnd);
       console.log('Previous incomes:', previousIncomesData?.length);
       console.log('Previous expenses:', previousExpensesData?.length);
 
       mappedCategories.forEach(category => {
-        let allocated = 0;
+        // Group expenses by currency for this category
+        const expensesByCurrency: Record<string, number> = {};
+        const categoryExpenses = (previousExpensesData || []).filter(exp => exp.category_id === category.id);
+        categoryExpenses.forEach(exp => {
+          const expCurrency = (exp as any).currency || userCurrency || 'RUB';
+          expensesByCurrency[expCurrency] = (expensesByCurrency[expCurrency] || 0) + Number(exp.amount);
+        });
 
+        // Group allocations by currency
+        const allocationsByCurrency: Record<string, CategoryAllocation[]> = {};
         if (category.allocations && category.allocations.length > 0) {
           category.allocations.forEach(alloc => {
-            if (alloc.allocationType === 'amount') {
-              allocated += alloc.allocationValue;
-            } else if (alloc.allocationType === 'percent') {
-              const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === alloc.incomeSourceId);
-              const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
-              const expectedSourceAmount = mappedSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
-              const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
-              allocated += base * alloc.allocationValue / 100;
-              console.log(`Category ${category.name}: actualSourceTotal=${actualSourceTotal}, expectedSourceAmount=${expectedSourceAmount}, base=${base}, percent=${alloc.allocationValue}, allocated+=${base * alloc.allocationValue / 100}`);
+            const allocCurrency = alloc.currency || userCurrency || 'RUB';
+            if (!allocationsByCurrency[allocCurrency]) {
+              allocationsByCurrency[allocCurrency] = [];
             }
+            allocationsByCurrency[allocCurrency].push(alloc);
           });
         } else {
-          // Legacy support
-          if (category.allocationAmount) {
-            allocated = category.allocationAmount;
-          } else if (category.linkedSourceId && category.allocationPercent) {
-            const sourceIncomes = (previousIncomesData || []).filter(inc => inc.source_id === category.linkedSourceId);
-            const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
-            const expectedSourceAmount = mappedSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
-            const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
-            allocated = base * category.allocationPercent / 100;
+          // Legacy support - use user's currency
+          const defaultCurrency = userCurrency || 'RUB';
+          allocationsByCurrency[defaultCurrency] = [];
+        }
+
+        // Calculate allocated and spent for each currency
+        const allCurrencies = new Set([
+          ...Object.keys(allocationsByCurrency),
+          ...Object.keys(expensesByCurrency)
+        ]);
+
+        allCurrencies.forEach(currency => {
+          let allocated = 0;
+
+          // Calculate allocated budget for this currency
+          if (allocationsByCurrency[currency] && allocationsByCurrency[currency].length > 0) {
+            allocationsByCurrency[currency].forEach(alloc => {
+              if (alloc.allocationType === 'amount') {
+                allocated += alloc.allocationValue;
+              } else if (alloc.allocationType === 'percent') {
+                const sourceIncomes = (previousIncomesData || []).filter(inc => 
+                  inc.source_id === alloc.incomeSourceId &&
+                  ((inc as any).currency || userCurrency || 'RUB') === currency
+                );
+                const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+                const expectedSourceAmount = mappedSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
+                const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+                allocated += base * alloc.allocationValue / 100;
+              }
+            });
+          } else {
+            // Legacy support
+            if (category.allocationAmount) {
+              allocated = category.allocationAmount;
+            } else if (category.linkedSourceId && category.allocationPercent) {
+              const sourceIncomes = (previousIncomesData || []).filter(inc => 
+                inc.source_id === category.linkedSourceId &&
+                ((inc as any).currency || userCurrency || 'RUB') === currency
+              );
+              const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
+              const expectedSourceAmount = mappedSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
+              const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
+              allocated = base * category.allocationPercent / 100;
+            }
           }
-        }
 
-        const spent = (previousExpensesData || [])
-          .filter(exp => exp.category_id === category.id)
-          .reduce((sum, exp) => sum + Number(exp.amount), 0);
+          const spent = expensesByCurrency[currency] || 0;
+          const balance = allocated - spent;
 
-        const balance = allocated - spent;
-
-        // If overspent, save the debt
-        if (balance < 0) {
-          debts[category.id] = Math.abs(balance);
-          console.log(`Category ${category.name} has debt: spent=${spent}, allocated=${allocated}, debt=${Math.abs(balance)}`);
-        }
-        // If under-spent, save the carry-over
-        else if (balance > 0) {
-          carryOvers[category.id] = balance;
-          console.log(`Category ${category.name} has carry-over: spent=${spent}, allocated=${allocated}, carryOver=${balance}`);
-        }
+          // If overspent, save the debt
+          if (balance < 0) {
+            if (!debts[category.id]) {
+              debts[category.id] = {};
+            }
+            debts[category.id][currency] = Math.abs(balance);
+            console.log(`Category ${category.name} (${currency}) has debt: spent=${spent}, allocated=${allocated}, debt=${Math.abs(balance)}`);
+          }
+          // If under-spent, save the carry-over
+          else if (balance > 0) {
+            if (!carryOvers[category.id]) {
+              carryOvers[category.id] = {};
+            }
+            carryOvers[category.id][currency] = balance;
+            console.log(`Category ${category.name} (${currency}) has carry-over: spent=${spent}, allocated=${allocated}, carryOver=${balance}`);
+          }
+        });
       });
 
       setCategoryDebts(debts);

@@ -28,9 +28,12 @@ export function CategoryCard({
   compact = false
 }: CategoryCardProps) {
   const { formatAmount, currency: userCurrency } = useCurrency();
-  const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
-  const isOverBudget = budget.spent > budget.allocated;
-  const remaining = budget.allocated - budget.spent;
+  // Calculate available budget: allocated + carryOver - debt
+  // Профицит увеличивает доступный бюджет, долг уменьшает его
+  const totalAllocated = budget.allocated + (budget.carryOver || 0) - (budget.debt || 0);
+  const usedPercentage = totalAllocated > 0 ? (budget.spent / totalAllocated) * 100 : 0;
+  const isOverBudget = budget.spent > totalAllocated;
+  const remaining = totalAllocated - budget.spent;
   
   // Определяем статус и цвет
   const getStatus = () => {
@@ -163,10 +166,12 @@ export function CategoryCard({
             {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0 ? (
               <div className="space-y-1 mb-1">
                 {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
-                  const currencyUsedPercentage = currencyBudget.allocated > 0 
-                    ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+                  // Доступный бюджет = allocated + carryOver - debt
+                  const currencyTotalAllocated = currencyBudget.allocated + (currencyBudget.carryOver || 0) - (currencyBudget.debt || 0);
+                  const currencyUsedPercentage = currencyTotalAllocated > 0 
+                    ? (currencyBudget.spent / currencyTotalAllocated) * 100 
                     : 0;
-                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+                  const currencyIsOverBudget = currencyBudget.spent > currencyTotalAllocated;
                   
                   const currencySymbols: Record<string, string> = {
                     RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -213,6 +218,8 @@ export function CategoryCard({
               // Show currency-specific amounts
               <div className="space-y-1">
                 {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
+                  // Доступный бюджет = allocated + carryOver - debt
+                  const currencyTotalAllocated = currencyBudget.allocated + (currencyBudget.carryOver || 0) - (currencyBudget.debt || 0);
                   const currencySymbols: Record<string, string> = {
                     RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
                     JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
@@ -225,7 +232,7 @@ export function CategoryCard({
                         {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
                       </span>
                       <span className="text-muted-foreground">
-                        из {currencyBudget.allocated.toLocaleString('ru-RU')} {symbol}
+                        из {currencyTotalAllocated.toLocaleString('ru-RU')} {symbol}
                       </span>
                     </div>
                   );
@@ -235,7 +242,7 @@ export function CategoryCard({
               // Single currency - show standard view
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold">{formatAmount(budget.spent)}</span>
-                <span className="text-muted-foreground">из {formatAmount(budget.allocated)}</span>
+                <span className="text-muted-foreground">из {formatAmount(totalAllocated)}</span>
               </div>
             )}
             
@@ -260,11 +267,14 @@ export function CategoryCard({
               // Show currency-specific percentages
               <div className="space-y-1">
                 {Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
-                  const currencyUsedPercentage = currencyBudget.allocated > 0 
-                    ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+                  // Доступный бюджет = allocated + carryOver - debt
+                  const currencyTotalAllocated = currencyBudget.allocated + (currencyBudget.carryOver || 0) - (currencyBudget.debt || 0);
+                  const currencyUsedPercentage = currencyTotalAllocated > 0 
+                    ? (currencyBudget.spent / currencyTotalAllocated) * 100 
                     : 0;
-                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
-                  const currencyRemaining = currencyBudget.allocated - currencyBudget.spent;
+                  const currencyIsOverBudget = currencyBudget.spent > currencyTotalAllocated;
+                  const currencyRemaining = currencyTotalAllocated - currencyBudget.spent;
+                  const currencyOverBudget = currencyIsOverBudget ? currencyBudget.spent - currencyTotalAllocated : 0;
                   
                   const currencySymbols: Record<string, string> = {
                     RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -285,9 +295,9 @@ export function CategoryCard({
                           {currencyRemaining.toLocaleString('ru-RU')} {symbol}
                         </div>
                       ) : null}
-                      {currencyIsOverBudget ? (
+                      {currencyIsOverBudget && currencyOverBudget > 0 ? (
                         <div className="text-[9px] text-destructive font-medium">
-                          +{Math.abs(currencyRemaining).toLocaleString('ru-RU')} {symbol}
+                          +{currencyOverBudget.toLocaleString('ru-RU')} {symbol}
                         </div>
                       ) : null}
                     </div>
@@ -419,7 +429,7 @@ export function CategoryCard({
                 <div>
                   <span className="text-muted-foreground">из </span>
                   <span className="font-semibold">
-                    {currencyBudget.allocated.toLocaleString('ru-RU')} {symbol}
+                    {(currencyBudget.allocated + (currencyBudget.carryOver || 0)).toLocaleString('ru-RU')} {symbol}
                   </span>
                 </div>
               </div>
@@ -434,7 +444,7 @@ export function CategoryCard({
             </div>
             <div>
               <span className="text-muted-foreground">из </span>
-              <span className="font-semibold">{formatAmount(budget.allocated)}</span>
+              <span className="font-semibold">{formatAmount(totalAllocated)}</span>
             </div>
           </div>
         )}
@@ -472,11 +482,14 @@ export function CategoryCard({
         {budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0 ? (
           // Show currency-specific progress bars
           Object.entries(budget.budgetsByCurrency).map(([currency, currencyBudget]) => {
-            const currencyUsedPercentage = currencyBudget.allocated > 0 
-              ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+            // Доступный бюджет = allocated + carryOver - debt
+            const currencyTotalAllocated = currencyBudget.allocated + (currencyBudget.carryOver || 0) - (currencyBudget.debt || 0);
+            const currencyUsedPercentage = currencyTotalAllocated > 0 
+              ? (currencyBudget.spent / currencyTotalAllocated) * 100 
               : 0;
-            const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
-            const currencyRemaining = currencyBudget.allocated - currencyBudget.spent;
+            const currencyIsOverBudget = currencyBudget.spent > currencyTotalAllocated;
+            const currencyRemaining = currencyTotalAllocated - currencyBudget.spent;
+            const currencyOverBudget = currencyIsOverBudget ? currencyBudget.spent - currencyTotalAllocated : 0;
             
             const currencySymbols: Record<string, string> = {
               RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -509,12 +522,12 @@ export function CategoryCard({
                     {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
                   </span>
                   <span className="text-muted-foreground">
-                    из {currencyBudget.allocated.toLocaleString('ru-RU')} {symbol}
+                    из {currencyTotalAllocated.toLocaleString('ru-RU')} {symbol}
                   </span>
                 </div>
-                {currencyIsOverBudget && (
+                {currencyIsOverBudget && currencyOverBudget > 0 && (
                   <div className="text-[10px] text-destructive font-medium">
-                    Превышен на {Math.abs(currencyRemaining).toLocaleString('ru-RU')} {symbol}
+                    Превышен на {currencyOverBudget.toLocaleString('ru-RU')} {symbol}
                   </div>
                 )}
               </div>
@@ -551,7 +564,7 @@ export function CategoryCard({
           <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-xs font-bold text-destructive">
-              Превышен на {formatAmount(Math.abs(remaining))}
+              Превышен на {formatAmount(budget.spent - totalAllocated)}
             </p>
           </div>
         </div>
