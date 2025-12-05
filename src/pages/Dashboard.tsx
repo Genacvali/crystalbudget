@@ -1016,13 +1016,13 @@ const Dashboard = () => {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         <SummaryCard
-          title={`Баланс за ${monthName}`}
-          value={formatAmount(monthBalance)}
-          subtitle={monthBalance > 0 ? "Профицит" : monthBalance < 0 ? "Дефицит" : "Ноль"}
+          title={`Сумма за ${monthName}`}
+          value={formatAmount(currentMonthIncome)}
+          subtitle="Доходы за месяц"
           icon={TrendingUp}
-          variant={monthBalance > 0 ? "success" : monthBalance < 0 ? "destructive" : "default"}
+          variant="success"
           valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ?
-            Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.balance])) :
+            Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.income])) :
             undefined
           }
         />
