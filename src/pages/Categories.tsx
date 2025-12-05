@@ -637,8 +637,10 @@ const Categories = () => {
     );
   }
 
-  // Sort categories
-  const sortedCategories = [...categories].sort((a, b) => {
+  // Sort categories (excluding "Корректировка баланса")
+  const sortedCategories = [...categories]
+    .filter(category => category.name !== "Корректировка баланса")
+    .sort((a, b) => {
     const budgetA = getCategoryBudget(a);
     const budgetB = getCategoryBudget(b);
 

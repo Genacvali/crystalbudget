@@ -206,7 +206,7 @@ export function CategoryCard({
                 <Progress 
                   value={Math.min(usedPercentage, 100)} 
                   className={cn(
-                    "h-1.5 rounded-full",
+                    "h-1 rounded-full",
                     isOverBudget && "bg-destructive/20"
                   )}
                 />

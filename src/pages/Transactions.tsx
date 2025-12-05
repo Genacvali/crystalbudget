@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ArrowUpRight, ArrowDownRight, Edit, ArrowUpDown, Trash2 } from "lucide-react";
+import { Plus, ArrowUpRight, ArrowDownRight, Edit, ArrowUpDown, Trash2, MoreVertical, LayoutGrid, List, Calendar, ChevronDown, ChevronUp, X } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +24,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/EmptyState";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Income, Expense, IncomeSource, Category } from "@/types/budget";
 
 interface Transaction {
@@ -67,6 +76,11 @@ const Transactions = () => {
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
+  // New states for enhanced features
+  const [compactView, setCompactView] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+  const [fabOpen, setFabOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -494,102 +508,230 @@ const Transactions = () => {
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Транзакции</h1>
             <p className="text-sm text-muted-foreground">История доходов и расходов</p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              className="flex-1 sm:flex-none bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
-              onClick={() => { setEditingIncome(null); setIncomeDialogOpen(true); }}
-            >
-              <Plus className="h-4 w-4 mr-1 sm:mr-2" />
-              <span className="hidden xs:inline">Добавить </span>Доход
-            </Button>
-            <Button
-              className="flex-1 sm:flex-none bg-gradient-to-r from-destructive to-destructive/80 hover:from-destructive/90 hover:to-destructive/70 text-destructive-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
-              onClick={() => { setEditingExpense(null); setExpenseDialogOpen(true); }}
-            >
-              <Plus className="h-4 w-4 mr-1 sm:mr-2" />
-              <span className="hidden xs:inline">Добавить </span>Расход
-            </Button>
-          </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Select value={filterType} onValueChange={(value: "all" | "income" | "expense") => setFilterType(value)}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Тип" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все транзакции</SelectItem>
-              <SelectItem value="income">Доходы</SelectItem>
-              <SelectItem value="expense">Расходы</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+          <div className="flex flex-col sm:flex-row gap-2 flex-1 w-full sm:w-auto">
+            <Select value={filterType} onValueChange={(value: "all" | "income" | "expense") => setFilterType(value)}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Тип" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все транзакции</SelectItem>
+                <SelectItem value="income">Доходы</SelectItem>
+                <SelectItem value="expense">Расходы</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="w-full sm:w-[220px]">
-              <SelectValue placeholder="Категория/Источник" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все категории</SelectItem>
-              {filterType !== "income" && categories.length > 0 && (
-                <>
-                  <SelectItem value="expenses-header" disabled className="font-semibold">
-                    Категории расходов
-                  </SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.icon} {category.name}
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue placeholder="Категория/Источник" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все категории</SelectItem>
+                {filterType !== "income" && categories.length > 0 && (
+                  <>
+                    <SelectItem value="expenses-header" disabled className="font-semibold">
+                      Категории расходов
                     </SelectItem>
-                  ))}
-                </>
-              )}
-              {filterType !== "expense" && incomeSources.length > 0 && (
-                <>
-                  <SelectItem value="incomes-header" disabled className="font-semibold">
-                    Источники дохода
-                  </SelectItem>
-                  {incomeSources.map((source) => (
-                    <SelectItem key={source.id} value={source.id}>
-                      💰 {source.name}
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.icon} {category.name}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+                {filterType !== "expense" && incomeSources.length > 0 && (
+                  <>
+                    <SelectItem value="incomes-header" disabled className="font-semibold">
+                      Источники дохода
                     </SelectItem>
-                  ))}
-                </>
-              )}
-            </SelectContent>
-          </Select>
+                    {incomeSources.map((source) => (
+                      <SelectItem key={source.id} value={source.id}>
+                        💰 {source.name}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
 
-          <Select value={sortBy} onValueChange={(value: "date" | "amount") => setSortBy(value)}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <ArrowUpDown className="h-4 w-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="date">По дате</SelectItem>
-              <SelectItem value="amount">По сумме</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select value={sortBy} onValueChange={(value: "date" | "amount") => setSortBy(value)}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <ArrowUpDown className="h-4 w-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">По дате</SelectItem>
+                <SelectItem value="amount">По сумме</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
         </div>
 
         <div className="space-y-4 sm:space-y-6">
           {sortedTransactions.length === 0 ? (
             <Card>
-              <CardContent className="p-6 sm:p-8 text-center">
-                <p className="text-sm sm:text-base text-muted-foreground">Нет транзакций за выбранный период</p>
+              <CardContent className="p-6 sm:p-8">
+                {filterType !== "all" || filterCategory !== "all" ? (
+                  <EmptyState
+                    icon={X}
+                    title="Нет результатов"
+                    description="Попробуйте изменить фильтры или добавить новую транзакцию"
+                    action={{
+                      label: "Сбросить фильтры",
+                      onClick: () => {
+                        setFilterType("all");
+                        setFilterCategory("all");
+                      },
+                    }}
+                  />
+                ) : (
+                  <EmptyState
+                    icon={ArrowUpDown}
+                    title="Нет транзакций"
+                    description="Начните отслеживать свои доходы и расходы, добавив первую транзакцию"
+                    action={{
+                      label: "Добавить транзакцию",
+                      onClick: () => setIncomeDialogOpen(true),
+                      icon: Plus,
+                    }}
+                  />
+                )}
               </CardContent>
             </Card>
+          ) : viewMode === "calendar" ? (
+            // Calendar View
+            <div className="space-y-4">
+              <div className="grid grid-cols-7 gap-2">
+                {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day) => (
+                  <div key={day} className="text-center text-xs font-semibold text-muted-foreground py-2">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {(() => {
+                  const monthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+                  const monthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+                  const daysInMonth = monthEnd.getDate();
+                  const firstDayOfWeek = monthStart.getDay();
+                  const days: (Date | null)[] = [];
+                  
+                  // Adjust for Monday as first day (0 = Sunday, 1 = Monday)
+                  const adjustedFirstDay = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+                  
+                  // Add empty cells for days before month start
+                  for (let i = 0; i < adjustedFirstDay; i++) {
+                    days.push(null);
+                  }
+                  
+                  // Add all days of the month
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    days.push(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day));
+                  }
+                  
+                  // Group transactions by date
+                  const transactionsByDate = new Map<string, Transaction[]>();
+                  sortedTransactions.forEach(t => {
+                    const dateKey = format(new Date(t.date), 'yyyy-MM-dd');
+                    if (!transactionsByDate.has(dateKey)) {
+                      transactionsByDate.set(dateKey, []);
+                    }
+                    transactionsByDate.get(dateKey)!.push(t);
+                  });
+                  
+                  return days.map((date, idx) => {
+                    if (!date) {
+                      return <div key={`empty-${idx}`} className="aspect-square" />;
+                    }
+                    
+                    const dateKey = format(date, 'yyyy-MM-dd');
+                    const dayTransactions = transactionsByDate.get(dateKey) || [];
+                    const dayIncome = dayTransactions
+                      .filter(t => t.type === 'income')
+                      .reduce((sum, t) => sum + t.amount, 0);
+                    const dayExpense = dayTransactions
+                      .filter(t => t.type === 'expense')
+                      .reduce((sum, t) => sum + t.amount, 0);
+                    const isToday = format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+                    
+                    return (
+                      <Card
+                        key={dateKey}
+                        className={`aspect-square p-2 cursor-pointer hover:shadow-md transition-shadow ${
+                          isToday ? 'border-primary border-2' : ''
+                        } ${dayTransactions.length > 0 ? 'bg-card' : 'bg-muted/30'}`}
+                        onClick={() => {
+                          // Expand only this day, collapse others
+                          setCollapsedDays(new Set([dateKey]));
+                          setViewMode("list");
+                          // Scroll to this day
+                          setTimeout(() => {
+                            const element = document.querySelector(`[data-date="${dateKey}"]`);
+                            element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }, 100);
+                        }}
+                      >
+                        <div className="flex flex-col h-full">
+                          <div className={`text-xs font-semibold mb-1 ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>
+                            {format(date, 'd')}
+                          </div>
+                          <div className="flex-1 flex flex-col gap-0.5 text-[10px] overflow-hidden">
+                            {dayIncome > 0 && (
+                              <div className="text-success font-medium truncate">
+                                +{formatAmountWithCurrency(dayIncome, userCurrency)}
+                              </div>
+                            )}
+                            {dayExpense > 0 && (
+                              <div className="text-destructive font-medium truncate">
+                                -{formatAmountWithCurrency(dayExpense, userCurrency)}
+                              </div>
+                            )}
+                            {dayTransactions.length > 0 && (
+                              <div className="text-muted-foreground text-[9px] mt-auto">
+                                {dayTransactions.length} {dayTransactions.length === 1 ? 'транзакция' : 'транзакций'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
           ) : (
             groupedByDate.map((group) => (
-              <div key={group.date} className="space-y-2 sm:space-y-3">
+              <div key={group.date} data-date={group.date} className="space-y-2 sm:space-y-3">
                 {/* Заголовок даты с суммами */}
                 <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-1 py-2 border-b">
                   <div className="flex items-center justify-between">
-                    <div>
+                    <button
+                      onClick={() => {
+                        const newCollapsed = new Set(collapsedDays);
+                        if (newCollapsed.has(group.date)) {
+                          newCollapsed.delete(group.date);
+                        } else {
+                          newCollapsed.add(group.date);
+                        }
+                        setCollapsedDays(newCollapsed);
+                      }}
+                      className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-1 text-left"
+                    >
+                      {collapsedDays.has(group.date) ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      )}
                       <h3 className="font-semibold text-base sm:text-lg">
                         {group.relativeLabel && (
                           <span className="text-primary">{group.relativeLabel} • </span>
                         )}
                         {group.dateLabel}
                       </h3>
-                    </div>
+                    </button>
                     <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                       {group.totalsByCurrency && Object.keys(group.totalsByCurrency).length > 1 ? (
                         // Multiple currencies - show separate badges
@@ -614,9 +756,6 @@ const Transactions = () => {
                                   -{totals.totalExpense.toLocaleString('ru-RU')} {symbol}
                                 </Badge>
                               )}
-                              <Badge variant={totals.netAmount >= 0 ? "default" : "destructive"} className="hidden sm:flex text-[10px] sm:text-xs">
-                                {totals.netAmount >= 0 ? '+' : ''}{totals.netAmount.toLocaleString('ru-RU')} {symbol}
-                              </Badge>
                             </div>
                           );
                         })
@@ -635,9 +774,6 @@ const Transactions = () => {
                               -{formatAmountWithCurrency(group.totalExpense, group.totalsByCurrency ? Object.keys(group.totalsByCurrency)[0] : userCurrency)}
                             </Badge>
                           )}
-                          <Badge variant={group.netAmount >= 0 ? "default" : "destructive"} className="hidden sm:flex">
-                            {group.netAmount >= 0 ? '+' : ''}{formatAmountWithCurrency(group.netAmount, group.totalsByCurrency ? Object.keys(group.totalsByCurrency)[0] : userCurrency)}
-                          </Badge>
                         </>
                       )}
                     </div>
@@ -645,68 +781,134 @@ const Transactions = () => {
                 </div>
 
                 {/* Транзакции этого дня */}
-                {group.transactions.map((transaction) => (
-                  <Card key={transaction.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-3 sm:p-4">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="flex items-start sm:items-center gap-3">
-                          <div className={`p-2 rounded-lg shrink-0 ${transaction.type === "income"
+                {!collapsedDays.has(group.date) && group.transactions.map((transaction) => (
+                  <Card key={transaction.id} className="hover:shadow-md transition-shadow group">
+                    <CardContent className={compactView ? "p-2" : "p-3 sm:p-4"}>
+                      {compactView ? (
+                        // Compact view
+                        <div className="flex items-center gap-2">
+                          <div className={`p-1.5 rounded shrink-0 ${transaction.type === "income"
                             ? "bg-success/10"
                             : "bg-destructive/10"
                             }`}>
                             {transaction.type === "income" ? (
-                              <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
+                              <ArrowUpRight className="h-3 w-3 text-success" />
                             ) : (
-                              <ArrowDownRight className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
+                              <ArrowDownRight className="h-3 w-3 text-destructive" />
                             )}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="font-semibold text-sm sm:text-base truncate">
-                              {transaction.category}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-semibold text-sm truncate">
+                                {transaction.category}
+                              </p>
+                              <p className={`text-sm font-bold shrink-0 ${transaction.type === "income"
+                                ? "text-success"
+                                : "text-destructive"
+                                }`}>
+                                {transaction.type === "income" ? "+" : "-"}
+                                {formatAmountWithCurrency(transaction.amount, transaction.currency)}
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {transaction.description || "Без описания"}
                             </p>
-                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
-                              <span className="text-xs text-muted-foreground truncate">
-                                {transaction.description || "Без описания"}
-                              </span>
-                              <span className="text-xs text-muted-foreground">•</span>
-                              <span className="text-xs text-muted-foreground">
-                                {transaction.userName}
-                              </span>
-                              <span className="text-xs text-muted-foreground">•</span>
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(transaction.date), "HH:mm", { locale: ru })}
-                              </span>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditTransaction(transaction)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                Редактировать
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setDeletingTransaction(transaction)}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Удалить
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ) : (
+                        // Normal view
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div className="flex items-start sm:items-center gap-3">
+                            <div className={`p-2 rounded-lg shrink-0 ${transaction.type === "income"
+                              ? "bg-success/10"
+                              : "bg-destructive/10"
+                              }`}>
+                              {transaction.type === "income" ? (
+                                <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
+                              ) : (
+                                <ArrowDownRight className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-sm sm:text-base truncate">
+                                {transaction.category}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
+                                <span className="text-xs text-muted-foreground truncate">
+                                  {transaction.description || "Без описания"}
+                                </span>
+                                <span className="text-xs text-muted-foreground">•</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {transaction.userName}
+                                </span>
+                                <span className="text-xs text-muted-foreground">•</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {format(new Date(transaction.date), "HH:mm", { locale: ru })}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4">
-                          <p className={`text-lg sm:text-xl font-bold ${transaction.type === "income"
-                            ? "text-success"
-                            : "text-destructive"
-                            }`}>
-                            {transaction.type === "income" ? "+" : "-"}
-                            {formatAmountWithCurrency(transaction.amount, transaction.currency)}
-                          </p>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="shrink-0"
-                              onClick={() => handleEditTransaction(transaction)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeletingTransaction(transaction)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4">
+                            <p className={`text-lg sm:text-xl font-bold ${transaction.type === "income"
+                              ? "text-success"
+                              : "text-destructive"
+                              }`}>
+                              {transaction.type === "income" ? "+" : "-"}
+                              {formatAmountWithCurrency(transaction.amount, transaction.currency)}
+                            </p>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditTransaction(transaction)}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Редактировать
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => setDeletingTransaction(transaction)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Удалить
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </CardContent>
                   </Card>
                 ))}
@@ -768,6 +970,63 @@ const Transactions = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Floating Action Button (FAB) for Mobile */}
+      <div className="fixed bottom-6 right-6 z-50 sm:hidden">
+        <div className="relative">
+          {fabOpen && (
+            <>
+              {/* Backdrop */}
+              <div 
+                className="fixed inset-0 bg-background/80 backdrop-blur-sm -z-10"
+                onClick={() => setFabOpen(false)}
+              />
+              {/* Action Buttons */}
+              <div className="absolute bottom-16 right-0 flex flex-col gap-3 mb-2">
+                <div className="flex flex-col items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                  <span className="text-xs text-muted-foreground bg-card px-2 py-1 rounded">Доход</span>
+                  <Button
+                    size="lg"
+                    className="rounded-full w-14 h-14 shadow-lg bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70"
+                    onClick={() => {
+                      setEditingIncome(null);
+                      setIncomeDialogOpen(true);
+                      setFabOpen(false);
+                    }}
+                    title="Добавить доход"
+                  >
+                    <ArrowUpRight className="h-6 w-6" />
+                  </Button>
+                </div>
+                <div className="flex flex-col items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-75">
+                  <span className="text-xs text-muted-foreground bg-card px-2 py-1 rounded">Расход</span>
+                  <Button
+                    size="lg"
+                    className="rounded-full w-14 h-14 shadow-lg bg-gradient-to-r from-destructive to-destructive/80 hover:from-destructive/90 hover:to-destructive/70"
+                    onClick={() => {
+                      setEditingExpense(null);
+                      setExpenseDialogOpen(true);
+                      setFabOpen(false);
+                    }}
+                    title="Добавить расход"
+                  >
+                    <ArrowDownRight className="h-6 w-6" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+          <Button
+            size="lg"
+            className={`rounded-full w-16 h-16 shadow-xl bg-primary hover:bg-primary/90 transition-all duration-300 ${
+              fabOpen ? 'rotate-45' : 'rotate-0'
+            }`}
+            onClick={() => setFabOpen(!fabOpen)}
+          >
+            <Plus className="h-6 w-6" />
+          </Button>
+        </div>
+      </div>
     </Layout>
   );
 };

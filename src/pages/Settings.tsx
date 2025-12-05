@@ -983,9 +983,9 @@ const Settings = () => {
 
   return (
     <Layout selectedDate={new Date()} onDateChange={() => { }} showMonthSelector={false}>
-      <div className="space-y-6 max-w-2xl">
-        <div>
-          <h1 className="text-3xl font-bold">Настройки</h1>
+      <div className="space-y-6 max-w-4xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2">Настройки</h1>
           <p className="text-muted-foreground">Управление приложением и персонализация</p>
         </div>
 
@@ -1414,11 +1414,15 @@ const Settings = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Аккаунт</CardTitle>
+            <CardTitle className="text-xl">Аккаунт</CardTitle>
             <CardDescription>Управление вашим аккаунтом</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button onClick={handleLogout} variant="outline" className="w-full">
+            <Button 
+              onClick={handleLogout} 
+              variant="outline" 
+              className="w-full h-11 justify-start"
+            >
               <LogOut className="mr-2 h-4 w-4" />
               Выйти из аккаунта
             </Button>
@@ -1427,71 +1431,79 @@ const Settings = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Данные</CardTitle>
+            <CardTitle className="text-xl">Данные</CardTitle>
             <CardDescription>Управление вашими данными</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={handleExportData}
-                disabled={loading}
-              >
-                {loading ? "Экспортирую..." : "Экспортировать данные"}
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                disabled={loading}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {loading ? "Импортирую..." : "Импортировать данные"}
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleImportData}
-                disabled={loading}
-                className="hidden"
-              />
+          <CardContent className="space-y-6">
+            {/* Импорт/Экспорт */}
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 h-11"
+                  onClick={handleExportData}
+                  disabled={loading}
+                >
+                  {loading ? "Экспорт..." : "Экспорт"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 h-11"
+                  disabled={loading}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {loading ? "Импорт..." : "Импорт"}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportData}
+                  disabled={loading}
+                  className="hidden"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Импорт заменит все существующие данные. Используйте файл, экспортированный из CrystalBudget.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Импорт заменит все существующие данные. Используйте файл, экспортированный из CrystalBudget.
-            </p>
 
-
-
-            <div className="space-y-2 pt-2 border-t">
-              <p className="text-sm font-medium">Очистка текущего месяца</p>
+            {/* Очистка текущего месяца */}
+            <div className="space-y-3 pt-4 border-t">
+              <div>
+                <p className="text-sm font-semibold mb-1">Очистка текущего месяца</p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Удалит все транзакции за текущий месяц. Полезно, если хотите начать месяц заново.
+                </p>
+              </div>
               <Button
                 variant="outline"
-                className="w-full"
+                className="w-full h-11"
                 onClick={handleClearCurrentMonth}
                 disabled={loading}
               >
                 {loading ? "Очищаю..." : "Очистить текущий месяц"}
               </Button>
-              <p className="text-xs text-muted-foreground">
-                Удалит все транзакции за текущий месяц. Полезно, если хотите начать месяц заново.
-              </p>
             </div>
 
-            <div className="space-y-2 pt-2 border-t">
-              <p className="text-sm font-medium text-destructive">Полная очистка</p>
+            {/* Полная очистка */}
+            <div className="space-y-3 pt-4 border-t">
+              <div>
+                <p className="text-sm font-semibold text-destructive mb-1">Полная очистка</p>
+                <p className="text-xs text-muted-foreground mb-3 flex items-start gap-1.5">
+                  <span className="text-destructive">⚠️</span>
+                  <span>Удалит ВСЕ данные: транзакции, категории, источники дохода. Действие необратимо!</span>
+                </p>
+              </div>
               <Button
                 variant="destructive"
-                className="w-full"
+                className="w-full h-11"
                 onClick={handleClearData}
                 disabled={loading}
               >
                 {loading ? "Очищаю..." : "Очистить все данные"}
               </Button>
-              <p className="text-xs text-muted-foreground">
-                ⚠️ Удалит ВСЕ данные: транзакции, категории, источники дохода. Действие необратимо!
-              </p>
             </div>
           </CardContent>
         </Card>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { TrendingUp, TrendingDown, PiggyBank, Plus, Wallet, FolderOpen, BarChart3, Bot, ArrowUpDown, LayoutGrid, List, Filter } from "lucide-react";
+import { TrendingUp, TrendingDown, PiggyBank, Plus, Wallet, FolderOpen, BarChart3, Bot, ArrowUpDown, LayoutGrid, List, Filter, PieChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,6 +12,7 @@ import { CategoryCard } from "@/components/CategoryCard";
 import { IncomeDialog } from "@/components/IncomeDialog";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { AIChatDialog } from "@/components/AIChatDialog";
+import { BalanceAdjustmentDialog } from "@/components/BalanceAdjustmentDialog";
 import { QuickGuide } from "@/components/QuickGuide";
 import { TelegramGuide } from "@/components/TelegramGuide";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
@@ -170,15 +171,32 @@ const Dashboard = () => {
         }
       }
 
-      // Calculate carry-over balance from all previous months (family scope)
+      // Calculate carry-over balance from all previous months (family scope) with currency support
       const {
         data: previousIncomes
-      } = await supabase.from('incomes').select('amount').in('user_id', familyUserIds).lt('date', startOfMonth);
+      } = await supabase.from('incomes').select('amount, currency').in('user_id', familyUserIds).lt('date', startOfMonth);
       const {
         data: previousExpenses
-      } = await supabase.from('expenses').select('amount').in('user_id', familyUserIds).lt('date', startOfMonth);
-      const previousTotalIncome = (previousIncomes || []).reduce((sum, inc) => sum + Number(inc.amount), 0);
-      const previousTotalExpenses = (previousExpenses || []).reduce((sum, exp) => sum + Number(exp.amount), 0);
+      } = await supabase.from('expenses').select('amount, currency').in('user_id', familyUserIds).lt('date', startOfMonth);
+      
+      // Group previous incomes and expenses by currency
+      const prevIncomeByCurrency: Record<string, number> = {};
+      const prevExpenseByCurrency: Record<string, number> = {};
+      
+      (previousIncomes || []).forEach(inc => {
+        const curr = inc.currency || userCurrency || 'RUB';
+        prevIncomeByCurrency[curr] = (prevIncomeByCurrency[curr] || 0) + Number(inc.amount);
+      });
+      
+      (previousExpenses || []).forEach(exp => {
+        const curr = exp.currency || userCurrency || 'RUB';
+        prevExpenseByCurrency[curr] = (prevExpenseByCurrency[curr] || 0) + Number(exp.amount);
+      });
+      
+      // Calculate carry-over for primary currency only
+      const primaryCurrency = userCurrency || 'RUB';
+      const previousTotalIncome = prevIncomeByCurrency[primaryCurrency] || 0;
+      const previousTotalExpenses = prevExpenseByCurrency[primaryCurrency] || 0;
       const calculatedCarryOver = previousTotalIncome - previousTotalExpenses;
       setCarryOverBalance(calculatedCarryOver);
 
@@ -935,17 +953,77 @@ const Dashboard = () => {
       totalBalance: number;
     }> = {};
 
+    const primaryCurrency = userCurrency || 'RUB';
+    
     allCurrencies.forEach(currency => {
       const income = incomeByCurrency[currency] || 0;
       const expense = expenseByCurrency[currency] || 0;
       const balance = income - expense;
-      const totalBalance = balance + (carryOverBalance || 0); // Note: carryOverBalance is in primary currency
+      // Only add carry-over balance for primary currency
+      const totalBalance = currency === primaryCurrency 
+        ? balance + (carryOverBalance || 0)
+        : balance;
 
       result[currency] = { income, expense, balance, totalBalance };
     });
 
     return result;
   }, [incomes, expenses, userCurrency, carryOverBalance]);
+
+  // Calculate daily history for trends
+  const historyData = useMemo(() => {
+    const daysInMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).getDate();
+    const incomeHistory = new Array(daysInMonth).fill(0);
+    const expenseHistory = new Array(daysInMonth).fill(0);
+    const balanceHistory = new Array(daysInMonth).fill(0);
+
+    const primaryCurrency = userCurrency || 'RUB';
+
+    incomes.forEach(inc => {
+      if ((inc.currency || userCurrency || 'RUB') !== primaryCurrency) return;
+      const day = new Date(inc.date).getDate() - 1;
+      if (day >= 0 && day < daysInMonth) {
+        incomeHistory[day] += Number(inc.amount);
+      }
+    });
+
+    expenses.forEach(exp => {
+      if ((exp.currency || userCurrency || 'RUB') !== primaryCurrency) return;
+      const day = new Date(exp.date).getDate() - 1;
+      if (day >= 0 && day < daysInMonth) {
+        expenseHistory[day] += Number(exp.amount);
+      }
+    });
+
+    // Calculate cumulative balance for the month
+    let currentBalance = carryOverBalance || 0;
+    for (let i = 0; i < daysInMonth; i++) {
+      currentBalance += incomeHistory[i] - expenseHistory[i];
+      balanceHistory[i] = currentBalance;
+    }
+
+    return { income: incomeHistory, expense: expenseHistory, balance: balanceHistory };
+  }, [incomes, expenses, selectedDate, userCurrency, carryOverBalance]);
+
+  // Calculate Safe to Spend (Daily Budget)
+  const safeToSpend = useMemo(() => {
+    const primaryCurrency = userCurrency || 'RUB';
+    const totalBal = balancesByCurrency[primaryCurrency]?.totalBalance || 0;
+    
+    const today = new Date();
+    const isCurrentMonth = today.getMonth() === selectedDate.getMonth() && today.getFullYear() === selectedDate.getFullYear();
+    
+    if (!isCurrentMonth) return null;
+
+    const daysInMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).getDate();
+    const currentDay = today.getDate();
+    const daysRemaining = daysInMonth - currentDay + 1; // Including today
+
+    if (daysRemaining <= 0) return 0;
+    
+    // We use the current total balance (including carry over)
+    return Math.max(0, totalBal / daysRemaining);
+  }, [balancesByCurrency, selectedDate, userCurrency]);
 
   const currentMonthIncome = useMemo(
     () => {
@@ -1014,24 +1092,26 @@ const Dashboard = () => {
     {/* <PullToRefresh onRefresh={loadData}> */}
     <div className="space-y-4 sm:space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <SummaryCard
-          title={`Сумма за ${monthName}`}
+          title={`Доходы ${monthName}`}
           value={formatAmount(currentMonthIncome)}
-          subtitle="Доходы за месяц"
+          subtitle="Сумма поступлений"
           icon={TrendingUp}
           variant="success"
+          history={historyData.income}
           valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ?
             Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.income])) :
             undefined
           }
         />
         <SummaryCard
-          title="Общие расходы"
+          title="Расходы"
           value={formatAmount(totalExpenses)}
           subtitle={currentMonthIncome > 0 ? `${(totalExpenses / currentMonthIncome * 100).toFixed(0)}% от дохода` : undefined}
           icon={TrendingDown}
           variant="destructive"
+          history={historyData.expense}
           valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ?
             Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.expense])) :
             undefined
@@ -1051,9 +1131,7 @@ const Dashboard = () => {
                   ? `Расхождение: ${balanceDiff > 0 ? '+' : ''}${formatAmount(balanceDiff)}`
                   : `Синхронизировано с банком`)
                 : "Синхронизация счетов...")
-              : (carryOverBalance !== 0
-                ? `${formatAmount(monthBalance)} ${carryOverBalance >= 0 ? '+' : '-'} ${formatAmount(Math.abs(carryOverBalance))} остаток`
-                : `Только за ${monthName}`)
+              : undefined
           }
           icon={PiggyBank}
           variant={
@@ -1061,11 +1139,20 @@ const Dashboard = () => {
               ? (hasZenMoneyAccounts && showDiffWarning ? "warning" : "default")
               : (totalBalance > 0 ? "success" : totalBalance < 0 ? "destructive" : "default")
           }
+          history={historyData.balance}
           valuesByCurrency={Object.keys(balancesByCurrency).length > 1 ?
             Object.fromEntries(Object.entries(balancesByCurrency).map(([curr, data]) => [curr, data.totalBalance])) :
             undefined
           }
           className={showDiffWarning ? "border-yellow-500/50 bg-yellow-50/10" : undefined}
+          action={
+            !isZenMoneyConnected && (
+              <BalanceAdjustmentDialog
+                currentBalance={totalBalance}
+                onAdjustmentComplete={loadData}
+              />
+            )
+          }
         />
       </div>
 
@@ -1225,6 +1312,9 @@ const Dashboard = () => {
               )}>
                 {[...categories]
                   .filter(category => {
+                    // Hide "Корректировка баланса" category
+                    if (category.name === "Корректировка баланса") return false;
+                    
                     const budget = categoryBudgets.find(b => b.categoryId === category.id);
                     if (!budget) return false;
 
@@ -1380,6 +1470,9 @@ const Dashboard = () => {
             )}>
               {[...categories]
                 .filter(category => {
+                  // Hide "Корректировка баланса" category
+                  if (category.name === "Корректировка баланса") return false;
+                  
                   const budget = categoryBudgets.find(b => b.categoryId === category.id);
                   if (!budget) return false;
 
