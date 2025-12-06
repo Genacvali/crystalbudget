@@ -38,15 +38,6 @@ export const TelegramLoginButton = ({
   const { isInTelegram } = useTelegramWebApp();
 
   useEffect(() => {
-    // On mobile devices, Telegram Widget may not work if not in Telegram WebApp
-    // Check if we're on mobile and not in Telegram WebApp
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile && !isInTelegram) {
-      setError('Откройте приложение через Telegram для входа');
-      return;
-    }
-
     // Create global callback function
     const callbackName = 'telegramLoginCallback';
     window[callbackName] = (user: TelegramUser) => {
@@ -90,7 +81,7 @@ export const TelegramLoginButton = ({
       delete window[callbackName];
       delete window[errorCallbackName];
     };
-  }, [botName, buttonSize, cornerRadius, onAuth, requestAccess, isInTelegram]);
+  }, [botName, buttonSize, cornerRadius, onAuth, requestAccess]);
 
   if (error) {
     return (

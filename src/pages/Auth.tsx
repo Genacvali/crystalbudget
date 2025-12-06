@@ -414,14 +414,6 @@ const Auth = () => {
                   </div>
                 </div>
                 
-                {!isInTelegram && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
-                  <div className="p-3 mb-4 rounded-lg bg-muted/50 border border-muted">
-                    <p className="text-sm text-muted-foreground text-center">
-                      💡 На мобильных устройствах откройте приложение через Telegram бота для автоматического входа
-                    </p>
-                  </div>
-                )}
-                
                 <TelegramLoginButton
                   botName="CrystalBudget_bot"
                   onAuth={handleTelegramAuth}
@@ -465,13 +457,6 @@ const Auth = () => {
                   </div>
                 </div>
                 
-                {!isInTelegram && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
-                  <div className="p-3 mb-4 rounded-lg bg-muted/50 border border-muted">
-                    <p className="text-sm text-muted-foreground text-center">
-                      💡 На мобильных устройствах откройте приложение через Telegram бота для автоматического входа
-                    </p>
-                  </div>
-                )}
                 
                 <TelegramLoginButton
                   botName="CrystalBudget_bot"
@@ -512,13 +497,6 @@ const Auth = () => {
                   </div>
                 </div>
                 
-                {!isInTelegram && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
-                  <div className="p-3 mb-4 rounded-lg bg-muted/50 border border-muted">
-                    <p className="text-sm text-muted-foreground text-center">
-                      💡 На мобильных устройствах откройте приложение через Telegram бота для автоматического входа
-                    </p>
-                  </div>
-                )}
                 
                 <TelegramLoginButton
                   botName="CrystalBudget_bot"
