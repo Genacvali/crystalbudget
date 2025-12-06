@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useTelegramWebApp } from '@/hooks/useTelegramWebApp';
 
 interface TelegramUser {
   id: number;
@@ -21,6 +22,7 @@ interface TelegramLoginButtonProps {
 declare global {
   interface Window {
     telegramLoginCallback?: (user: TelegramUser) => void;
+    telegramLoginError?: (error: string) => void;
   }
 }
 
@@ -32,12 +34,31 @@ export const TelegramLoginButton = ({
   requestAccess = true,
 }: TelegramLoginButtonProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { isInTelegram } = useTelegramWebApp();
 
   useEffect(() => {
+    // On mobile devices, Telegram Widget may not work if not in Telegram WebApp
+    // Check if we're on mobile and not in Telegram WebApp
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile && !isInTelegram) {
+      setError('Откройте приложение через Telegram для входа');
+      return;
+    }
+
     // Create global callback function
     const callbackName = 'telegramLoginCallback';
     window[callbackName] = (user: TelegramUser) => {
+      setError(null);
       onAuth(user);
+    };
+
+    // Create error callback
+    const errorCallbackName = 'telegramLoginError';
+    window[errorCallbackName] = (errorMsg: string) => {
+      console.error('Telegram Widget error:', errorMsg);
+      setError('Ошибка авторизации через Telegram. Попробуйте открыть приложение через Telegram.');
     };
 
     // Load Telegram Widget script
@@ -52,6 +73,11 @@ export const TelegramLoginButton = ({
     }
     script.async = true;
 
+    // Handle script load errors
+    script.onerror = () => {
+      setError('Не удалось загрузить виджет Telegram. Откройте приложение через Telegram.');
+    };
+
     if (containerRef.current) {
       containerRef.current.appendChild(script);
     }
@@ -62,8 +88,22 @@ export const TelegramLoginButton = ({
         containerRef.current.removeChild(script);
       }
       delete window[callbackName];
+      delete window[errorCallbackName];
     };
-  }, [botName, buttonSize, cornerRadius, onAuth, requestAccess]);
+  }, [botName, buttonSize, cornerRadius, onAuth, requestAccess, isInTelegram]);
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center p-4 text-center">
+        <p className="text-sm text-muted-foreground mb-2">{error}</p>
+        {!isInTelegram && (
+          <p className="text-xs text-muted-foreground">
+            Откройте приложение через Telegram бота для автоматического входа
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return <div ref={containerRef} className="flex justify-center" />;
 };

@@ -50,18 +50,29 @@ const Auth = () => {
         body: { initData }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Telegram WebApp auth error:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        console.error('Telegram WebApp auth error from function:', data.error);
+        throw new Error(data.error);
+      }
 
       if (data?.magic_link) {
         // Redirect to magic link for authentication
         window.location.href = data.magic_link;
+      } else {
+        throw new Error('Не получена ссылка для авторизации');
       }
     } catch (error) {
       console.error('Telegram WebApp auth error:', error);
       setIsTelegramAuthenticating(false);
+      const errorMessage = error instanceof Error ? error.message : 'Не удалось войти через Telegram';
       toast({
         title: "Ошибка авторизации",
-        description: "Не удалось войти через Telegram",
+        description: errorMessage,
         variant: "destructive"
       });
     }
@@ -403,6 +414,14 @@ const Auth = () => {
                   </div>
                 </div>
                 
+                {!isInTelegram && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
+                  <div className="p-3 mb-4 rounded-lg bg-muted/50 border border-muted">
+                    <p className="text-sm text-muted-foreground text-center">
+                      💡 На мобильных устройствах откройте приложение через Telegram бота для автоматического входа
+                    </p>
+                  </div>
+                )}
+                
                 <TelegramLoginButton
                   botName="CrystalBudget_bot"
                   onAuth={handleTelegramAuth}
@@ -445,6 +464,61 @@ const Auth = () => {
                     </span>
                   </div>
                 </div>
+                
+                {!isInTelegram && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
+                  <div className="p-3 mb-4 rounded-lg bg-muted/50 border border-muted">
+                    <p className="text-sm text-muted-foreground text-center">
+                      💡 На мобильных устройствах откройте приложение через Telegram бота для автоматического входа
+                    </p>
+                  </div>
+                )}
+                
+                <TelegramLoginButton
+                  botName="CrystalBudget_bot"
+                  onAuth={handleTelegramAuth}
+                  buttonSize="large"
+                  cornerRadius={8}
+                />
+              </form>
+            </TabsContent>
+            
+            <TabsContent value="signup">
+              <form onSubmit={handleSignup} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-name">Имя</Label>
+                  <Input id="signup-name" type="text" placeholder="Иван Иванов" value={signupName} onChange={e => setSignupName(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email">Email</Label>
+                  <Input id="signup-email" type="email" placeholder="your@email.com" value={signupEmail} onChange={e => setSignupEmail(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-password">Пароль</Label>
+                  <Input id="signup-password" type="password" placeholder="••••••" value={signupPassword} onChange={e => setSignupPassword(e.target.value)} required />
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Зарегистрироваться
+                </Button>
+                
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">
+                      Или
+                    </span>
+                  </div>
+                </div>
+                
+                {!isInTelegram && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
+                  <div className="p-3 mb-4 rounded-lg bg-muted/50 border border-muted">
+                    <p className="text-sm text-muted-foreground text-center">
+                      💡 На мобильных устройствах откройте приложение через Telegram бота для автоматического входа
+                    </p>
+                  </div>
+                )}
                 
                 <TelegramLoginButton
                   botName="CrystalBudget_bot"
