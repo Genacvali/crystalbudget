@@ -181,14 +181,8 @@ export function CategoryCard({
                   
                   return (
                     <div key={currency} className="space-y-0.5">
-                      <div className="flex justify-between items-center text-[9px]">
-                        <span className="text-muted-foreground">{currency} {symbol}:</span>
-                        <span className={cn(
-                          "font-semibold",
-                          currencyIsOverBudget ? "text-destructive" : "text-foreground"
-                        )}>
-                          {currencyUsedPercentage.toFixed(0)}%
-                        </span>
+                      <div className="text-[9px] text-muted-foreground">
+                        {currency} {symbol}
                       </div>
                       <Progress 
                         value={Math.min(currencyUsedPercentage, 100)} 
@@ -225,40 +219,73 @@ export function CategoryCard({
                     JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
                   };
                   const symbol = currencySymbols[currency] || currency;
+                  const hasCarryOver = (currencyBudget.carryOver || 0) > 0;
+                  const hasDebt = (currencyBudget.debt || 0) > 0;
+                  const hasAdjustments = hasCarryOver || hasDebt;
                   
                   return (
-                    <div key={currency} className="flex items-center justify-between text-[10px]">
-                      <span className="font-semibold">
-                        {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
-                      </span>
-                      <span className="text-muted-foreground">
-                        из {currencyTotalAllocated.toLocaleString('ru-RU')} {symbol}
-                      </span>
+                    <div key={currency} className="space-y-0.5">
+                      {/* Основная строка: Потрачено из Доступно */}
+                      <div className="text-[11px]">
+                        <span className="font-bold">
+                          {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {' '}из {currencyTotalAllocated.toLocaleString('ru-RU')} {symbol}
+                        </span>
+                      </div>
+                      
+                      {/* Расчёт бюджета если есть корректировки */}
+                      {hasAdjustments && (
+                        <div className="text-[9px] text-muted-foreground">
+                          (Бюджет {currencyBudget.allocated.toLocaleString('ru-RU')} {symbol}
+                          {hasCarryOver && (
+                            <span className="text-blue-600 dark:text-blue-400">
+                              {' '}+{(currencyBudget.carryOver || 0).toLocaleString('ru-RU')}
+                            </span>
+                          )}
+                          {hasDebt && (
+                            <span className="text-orange-600 dark:text-orange-400">
+                              {' '}−{(currencyBudget.debt || 0).toLocaleString('ru-RU')}
+                            </span>
+                          )}
+                          {' '}={' '}{currencyTotalAllocated.toLocaleString('ru-RU')} {symbol})
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             ) : (
-              // Single currency - show standard view
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold">{formatAmount(budget.spent)}</span>
-                <span className="text-muted-foreground">из {formatAmount(totalAllocated)}</span>
+              // Single currency - simple and clear
+              <div className="space-y-0.5">
+                {/* Основная строка: Потрачено из Доступно */}
+                <div className="text-xs">
+                  <span className="font-bold">{formatAmount(budget.spent)}</span>
+                  <span className="text-muted-foreground">
+                    {' '}из {formatAmount(totalAllocated)}
+                  </span>
+                </div>
+                
+                {/* Расчёт бюджета если есть корректировки */}
+                {((budget.carryOver || 0) > 0 || (budget.debt || 0) > 0) && (
+                  <div className="text-[9px] text-muted-foreground">
+                    (Бюджет {formatAmount(budget.allocated)}
+                    {(budget.carryOver || 0) > 0 && (
+                      <span className="text-blue-600 dark:text-blue-400">
+                        {' '}+{formatAmount(budget.carryOver)}
+                      </span>
+                    )}
+                    {(budget.debt || 0) > 0 && (
+                      <span className="text-orange-600 dark:text-orange-400">
+                        {' '}−{formatAmount(budget.debt)}
+                      </span>
+                    )}
+                    {' '}={' '}{formatAmount(totalAllocated)})
+                  </div>
+                )}
               </div>
             )}
-            
-            {/* Перенос остатка из предыдущего месяца */}
-            {budget.carryOver && budget.carryOver > 0 ? (
-              <div className="text-[10px] text-blue-600 dark:text-blue-400 font-medium mt-0.5">
-                Перенос: +{formatAmount(budget.carryOver)}
-              </div>
-            ) : null}
-            
-            {/* Задолженность из предыдущего месяца */}
-            {budget.debt && budget.debt > 0 ? (
-              <div className="text-[10px] text-orange-600 dark:text-orange-400 font-medium mt-0.5">
-                Долг: -{formatAmount(budget.debt)}
-              </div>
-            ) : null}
           </div>
           
           {/* Процент */}
@@ -291,13 +318,23 @@ export function CategoryCard({
                         {currencyUsedPercentage.toFixed(0)}%
                       </div>
                       {!currencyIsOverBudget && currencyRemaining > 0 ? (
+                        <div className="text-[9px] text-muted-foreground font-medium">
+                          осталось
+                        </div>
+                      ) : null}
+                      {!currencyIsOverBudget && currencyRemaining > 0 ? (
                         <div className="text-[9px] text-success font-medium">
                           {currencyRemaining.toLocaleString('ru-RU')} {symbol}
                         </div>
                       ) : null}
                       {currencyIsOverBudget && currencyOverBudget > 0 ? (
+                        <div className="text-[9px] text-muted-foreground font-medium">
+                          превышено
+                        </div>
+                      ) : null}
+                      {currencyIsOverBudget && currencyOverBudget > 0 ? (
                         <div className="text-[9px] text-destructive font-medium">
-                          +{currencyOverBudget.toLocaleString('ru-RU')} {symbol}
+                          {currencyOverBudget.toLocaleString('ru-RU')} {symbol}
                         </div>
                       ) : null}
                     </div>
@@ -314,14 +351,24 @@ export function CategoryCard({
                   {usedPercentage.toFixed(0)}%
                 </div>
                 {!isOverBudget && remaining > 0 ? (
-                  <div className="text-[10px] text-success font-medium">
-                    {formatAmount(remaining)}
-                  </div>
+                  <>
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      осталось
+                    </div>
+                    <div className="text-[10px] text-success font-medium">
+                      {formatAmount(remaining)}
+                    </div>
+                  </>
                 ) : null}
                 {isOverBudget ? (
-                  <div className="text-[10px] text-destructive font-medium">
-                    +{formatAmount(Math.abs(remaining))}
-                  </div>
+                  <>
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      превышено
+                    </div>
+                    <div className="text-[10px] text-destructive font-medium">
+                      {formatAmount(Math.abs(remaining))}
+                    </div>
+                  </>
                 ) : null}
               </>
             )}
