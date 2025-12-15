@@ -8,9 +8,24 @@ import { Category, IncomeSource, CategoryAllocation } from "@/types/budget";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/useCurrency";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Sparkles } from "lucide-react";
 import { handleNumericInput } from "@/lib/numberInput";
 import { supabase } from "@/integrations/supabase/client";
+
+const CATEGORY_PRESETS = [
+  { icon: "🏠", name: "Жилье" },
+  { icon: "🍕", name: "Питание" },
+  { icon: "🚗", name: "Транспорт" },
+  { icon: "🎮", name: "Развлечения" },
+  { icon: "👕", name: "Одежда" },
+  { icon: "💊", name: "Здоровье" },
+  { icon: "📚", name: "Образование" },
+  { icon: "✈️", name: "Путешествия" },
+  { icon: "💻", name: "Техника" },
+  { icon: "🎁", name: "Подарки" },
+  { icon: "⚡", name: "Коммунальные" },
+  { icon: "🍔", name: "Рестораны" },
+];
 
 const categorySchema = z.object({
   name: z.string().min(1, "Название обязательно").max(100),
@@ -209,13 +224,53 @@ export function CategoryDialog({
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="name">Название</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="name">Название</Label>
+              {!category && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const preset = CATEGORY_PRESETS.find(p => !name || name === "");
+                    if (preset) {
+                      setName(preset.name);
+                      setIcon(preset.icon);
+                    }
+                  }}
+                  className="text-xs"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Быстрый выбор
+                </Button>
+              )}
+            </div>
             <Input 
               id="name" 
               placeholder="Продукты, Транспорт..." 
               value={name} 
               onChange={e => setName(e.target.value)} 
             />
+            {!category && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {CATEGORY_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.name}
+                    type="button"
+                    variant={name === preset.name && icon === preset.icon ? "default" : "outline"}
+                    size="sm"
+                    className="text-sm h-8"
+                    onClick={() => {
+                      setName(preset.name);
+                      setIcon(preset.icon);
+                    }}
+                  >
+                    <span className="mr-1">{preset.icon}</span>
+                    {preset.name}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
           
           <div className="grid gap-2">
@@ -252,6 +307,11 @@ export function CategoryDialog({
             {allocations.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 Нет источников. Добавьте источник дохода для распределения бюджета.
+              </p>
+            )}
+            {allocations.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                💡 Совет: Вы можете добавить несколько источников с разными валютами для поддержки мультивалютных категорий.
               </p>
             )}
 

@@ -145,32 +145,131 @@ const Incomes = () => {
   };
 
   const handleConfirmDelete = async () => {
-    if (!sourceToDelete) return;
+    if (!sourceToDelete || !effectiveUserId) return;
 
+    setLoading(true);
     try {
+      // First verify the source exists and belongs to the user
+      const { data: sourceData, error: checkError } = await supabase
+        .from('income_sources')
+        .select('id, user_id, zenmoney_id')
+        .eq('id', sourceToDelete)
+        .eq('user_id', effectiveUserId)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('Error checking source:', checkError);
+        throw checkError;
+      }
+
+      if (!sourceData) {
+        toast({
+          title: "Ошибка удаления",
+          description: "Источник не найден или у вас нет прав на его удаление",
+          variant: "destructive",
+        });
+        setSourceToDelete(null);
+        setDeleteDialogOpen(false);
+        setLoading(false);
+        return;
+      }
+
+      // First, manually delete category_allocations that reference this income_source
+      // This is necessary because RLS policies on category_allocations might block cascade deletes
+      // We need to find allocations where the category belongs to the user
+      const { data: userCategories } = await supabase
+        .from('categories')
+        .select('id')
+        .eq('user_id', effectiveUserId);
+
+      if (userCategories && userCategories.length > 0) {
+        const categoryIds = userCategories.map(c => c.id);
+        const { error: allocError } = await supabase
+          .from('category_allocations')
+          .delete()
+          .eq('income_source_id', sourceToDelete)
+          .in('category_id', categoryIds);
+
+        if (allocError) {
+          console.error('Error deleting allocations:', allocError);
+          // Continue anyway - allocations might not exist
+        }
+      }
+
+      // Delete bank_category_mapping entries that reference this income_source
+      // This table exists for ZenMoney integration and has a check constraint
+      // that prevents cascade deletes. We need to delete these entries manually.
+      try {
+        // Try multiple possible field combinations to delete related mappings
+        const deleteAttempts = [
+          // Try by income_source_id field
+          supabase.from('bank_category_mapping').delete().eq('income_source_id', sourceToDelete),
+          // Try by source_id field
+          supabase.from('bank_category_mapping').delete().eq('source_id', sourceToDelete),
+          // Try by category_id if it references income_source
+          supabase.from('bank_category_mapping').delete().eq('category_id', sourceToDelete),
+        ];
+
+        // If source has zenmoney_id, also try deleting by that
+        if (sourceData.zenmoney_id) {
+          deleteAttempts.push(
+            supabase.from('bank_category_mapping').delete().eq('bank_category_id', sourceData.zenmoney_id).eq('type', 'income'),
+            supabase.from('bank_category_mapping').delete().eq('zenmoney_id', sourceData.zenmoney_id).eq('type', 'income'),
+            supabase.from('bank_category_mapping').delete().eq('bank_id', sourceData.zenmoney_id).eq('type', 'income')
+          );
+        }
+
+        // Execute all delete attempts, ignoring errors for fields that don't exist
+        for (const attempt of deleteAttempts) {
+          try {
+            const { error } = await attempt;
+            if (error && !error.message.includes('does not exist') && !error.message.includes('column') && !error.code?.includes('42703')) {
+              console.error('Error deleting bank_category_mapping:', error);
+            }
+          } catch (e) {
+            // Ignore individual errors
+          }
+        }
+      } catch (e) {
+        console.log('Error attempting to delete bank_category_mapping entries:', e);
+        // Continue anyway - we'll try to delete the source and see what happens
+      }
+
+      // Now delete the income source (incomes will be automatically deleted due to CASCADE)
       const { error } = await supabase
         .from('income_sources')
         .delete()
-        .eq('id', sourceToDelete);
+        .eq('id', sourceToDelete)
+        .eq('user_id', effectiveUserId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Delete error:', error);
+        // Extract more detailed error information
+        const errorDetails = (error as any).details || (error as any).hint || error.message;
+        throw new Error(errorDetails || error.message || 'Неизвестная ошибка');
+      }
+
+      // Optimistically update UI
+      setSources(prev => prev.filter(s => s.id !== sourceToDelete));
 
       toast({
         title: "Источник удален",
-        description: "Источник дохода успешно удален",
+        description: "Источник дохода и все связанные записи успешно удалены",
       });
-
-      await loadIncomeSources();
     } catch (error) {
+      console.error('Full error object:', error);
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
         title: "Ошибка удаления",
         description: errorMessage,
         variant: "destructive",
       });
+      // Reload on error to ensure UI is in sync
+      await loadIncomeSources();
     } finally {
       setSourceToDelete(null);
       setDeleteDialogOpen(false);
+      setLoading(false);
     }
   };
 

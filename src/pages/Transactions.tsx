@@ -49,7 +49,17 @@ interface Transaction {
 }
 
 const Transactions = () => {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const saved = localStorage.getItem('selectedDate');
+    if (saved) {
+      try {
+        return new Date(saved);
+      } catch {
+        return new Date();
+      }
+    }
+    return new Date();
+  });
   const { toast } = useToast();
   const { formatAmount, currency: userCurrency } = useCurrency();
   const { createNotification } = useNotifications();
@@ -81,6 +91,11 @@ const Transactions = () => {
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
   const [fabOpen, setFabOpen] = useState(false);
+
+  // Сохраняем выбранную дату в localStorage
+  useEffect(() => {
+    localStorage.setItem('selectedDate', selectedDate.toISOString());
+  }, [selectedDate]);
 
   useEffect(() => {
     fetchData();

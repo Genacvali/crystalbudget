@@ -26,7 +26,17 @@ import { IncomeSource, Category, CategoryAllocation, Income, Expense, SourceSumm
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 const Dashboard = () => {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const saved = localStorage.getItem('selectedDate');
+    if (saved) {
+      try {
+        return new Date(saved);
+      } catch {
+        return new Date();
+      }
+    }
+    return new Date();
+  });
   const navigate = useNavigate();
   const {
     user
@@ -68,6 +78,12 @@ const Dashboard = () => {
   const [isZenMoneyConnected, setIsZenMoneyConnected] = useState(() => {
     return localStorage.getItem('isZenMoneyConnected') === 'true';
   });
+  
+  // Сохраняем выбранную дату в localStorage
+  useEffect(() => {
+    localStorage.setItem('selectedDate', selectedDate.toISOString());
+  }, [selectedDate]);
+
   useEffect(() => {
     if (user) {
       loadData();
@@ -707,7 +723,8 @@ const Dashboard = () => {
 
           if (category.allocations && category.allocations.length > 0) {
             category.allocations.forEach(alloc => {
-              if (alloc.currency !== currency) return;
+              const allocCurrency = alloc.currency || userCurrency || 'RUB';
+              if (allocCurrency !== currency) return;
 
               let allocAmount = 0;
               if (alloc.allocationType === 'amount') {
@@ -1476,16 +1493,52 @@ const Dashboard = () => {
                   const budget = categoryBudgets.find(b => b.categoryId === category.id);
                   if (!budget) return false;
 
-                  const usedPercentage = budget.allocated > 0 ? (budget.spent / budget.allocated) * 100 : 0;
-                  const isOverBudget = budget.spent > budget.allocated;
+                  // Check if category has multi-currency budgets
+                  if (budget.budgetsByCurrency && Object.keys(budget.budgetsByCurrency).length > 0) {
+                    // Multi-currency: check each currency
+                    let hasAttention = false;
+                    let hasExceeded = false;
 
-                  switch (categoryFilter) {
-                    case "attention":
-                      return usedPercentage > 70 && !isOverBudget;
-                    case "exceeded":
-                      return isOverBudget;
-                    default:
-                      return true;
+                    Object.values(budget.budgetsByCurrency).forEach(currencyBudget => {
+                      // currencyBudget.allocated уже включает carryOver (базовый бюджет + перенос)
+                      // Доступный бюджет = allocated - debt (долг уменьшает доступные средства)
+                      const currencyAvailableBudget = currencyBudget.allocated - (currencyBudget.debt || 0);
+                      const currencyUsedPercentage = currencyAvailableBudget > 0 
+                        ? (currencyBudget.spent / currencyAvailableBudget) * 100 
+                        : 0;
+                      const currencyIsOverBudget = currencyBudget.spent > currencyAvailableBudget;
+
+                      if (currencyUsedPercentage > 70 && !currencyIsOverBudget) {
+                        hasAttention = true;
+                      }
+                      if (currencyIsOverBudget) {
+                        hasExceeded = true;
+                      }
+                    });
+
+                    switch (categoryFilter) {
+                      case "attention":
+                        return hasAttention && !hasExceeded;
+                      case "exceeded":
+                        return hasExceeded;
+                      default:
+                        return true;
+                    }
+                  } else {
+                    // Single currency: use standard logic
+                    // budget.allocated уже включает carryOver, доступный бюджет = allocated - debt
+                    const availableBudget = budget.allocated - (budget.debt || 0);
+                    const usedPercentage = availableBudget > 0 ? (budget.spent / availableBudget) * 100 : 0;
+                    const isOverBudget = budget.spent > availableBudget;
+
+                    switch (categoryFilter) {
+                      case "attention":
+                        return usedPercentage > 70 && !isOverBudget;
+                      case "exceeded":
+                        return isOverBudget;
+                      default:
+                        return true;
+                    }
                   }
                 })
                 .sort((a, b) => {

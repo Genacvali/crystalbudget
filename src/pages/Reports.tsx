@@ -35,14 +35,31 @@ interface DailyExpense {
 }
 
 const Reports = () => {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const saved = localStorage.getItem('selectedDate');
+    if (saved) {
+      try {
+        return new Date(saved);
+      } catch {
+        return new Date();
+      }
+    }
+    return new Date();
+  });
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalExpenses, setTotalExpenses] = useState(0);
+  const [incomeByCurrency, setIncomeByCurrency] = useState<Record<string, number>>({});
+  const [expensesByCurrency, setExpensesByCurrency] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>([]);
   const [dailyExpenses, setDailyExpenses] = useState<DailyExpense[]>([]);
-  const { formatAmount } = useCurrency();
+  const { formatAmount, currency: userCurrency } = useCurrency();
   const { user } = useAuth();
+
+  // Сохраняем выбранную дату в localStorage
+  useEffect(() => {
+    localStorage.setItem('selectedDate', selectedDate.toISOString());
+  }, [selectedDate]);
 
   useEffect(() => {
     if (user) {
@@ -117,10 +134,10 @@ const Reports = () => {
       }
     }
 
-    // Загрузка доходов (family scope)
+    // Загрузка доходов (family scope) - включая валюту
     const { data: incomesData, error: incomesError } = await supabase
       .from("incomes")
-      .select("amount")
+      .select("amount, currency")
       .in("user_id", familyUserIds)
       .gte("date", monthStart.toISOString())
       .lte("date", monthEnd.toISOString());
@@ -130,10 +147,10 @@ const Reports = () => {
     }
     console.log('Incomes data:', incomesData);
 
-    // Загрузка расходов (family scope)
+    // Загрузка расходов (family scope) - включая валюту
     const { data: expensesData, error: expensesError } = await supabase
       .from("expenses")
-      .select("amount, date, category_id")
+      .select("amount, date, category_id, currency")
       .in("user_id", familyUserIds)
       .gte("date", monthStart.toISOString())
       .lte("date", monthEnd.toISOString());
@@ -151,28 +168,48 @@ const Reports = () => {
     
     console.log('Categories data:', categoriesData);
 
-    const income = incomesData?.reduce((sum, item) => sum + Number(item.amount), 0) || 0;
-    const expenses = expensesData?.reduce((sum, item) => sum + Number(item.amount), 0) || 0;
+    // Группировка по валютам
+    const incomeByCurrency: Record<string, number> = {};
+    const expensesByCurrency: Record<string, number> = {};
+    
+    (incomesData || []).forEach((income) => {
+      const currency = (income as any).currency || userCurrency || 'RUB';
+      incomeByCurrency[currency] = (incomeByCurrency[currency] || 0) + Number(income.amount);
+    });
+    
+    (expensesData || []).forEach((expense) => {
+      const currency = (expense as any).currency || userCurrency || 'RUB';
+      expensesByCurrency[currency] = (expensesByCurrency[currency] || 0) + Number(expense.amount);
+    });
+
+    // Для обратной совместимости - сумма всех валют
+    const income = Object.values(incomeByCurrency).reduce((sum, val) => sum + val, 0);
+    const expenses = Object.values(expensesByCurrency).reduce((sum, val) => sum + val, 0);
 
     setTotalIncome(income);
     setTotalExpenses(expenses);
+    setIncomeByCurrency(incomeByCurrency);
+    setExpensesByCurrency(expensesByCurrency);
 
-    // Группировка расходов по категориям для круговой диаграммы
-    const categoryMap = new Map<string, { name: string; value: number; icon: string }>();
+    // Группировка расходов по категориям для круговой диаграммы (группируем по валюте тоже)
+    const categoryMap = new Map<string, { name: string; value: number; icon: string; currency: string }>();
     
     if (expensesData && expensesData.length > 0 && categoriesData) {
       expensesData.forEach((expense) => {
         const category = categoriesData.find((cat) => cat.id === expense.category_id);
         const categoryName = category?.name || "Без категории";
         const categoryIcon = category?.icon || "📦";
-        const existing = categoryMap.get(categoryName);
+        const expenseCurrency = (expense as any).currency || userCurrency || 'RUB';
+        const key = `${categoryName}_${expenseCurrency}`;
+        const existing = categoryMap.get(key);
         if (existing) {
           existing.value += Number(expense.amount);
         } else {
-          categoryMap.set(categoryName, {
-            name: categoryName,
+          categoryMap.set(key, {
+            name: `${categoryName} (${expenseCurrency})`,
             value: Number(expense.amount),
-            icon: categoryIcon
+            icon: categoryIcon,
+            currency: expenseCurrency
           });
         }
       });
@@ -184,29 +221,35 @@ const Reports = () => {
       .map((item, index) => ({
         name: item.name,
         value: item.value,
-        color: COLORS[index % COLORS.length]
+        color: COLORS[index % COLORS.length],
+        currency: item.currency
       }));
 
     console.log('Category data for charts:', categoryData);
     setCategoryExpenses(categoryData);
 
-    // Группировка расходов по дням для линейного графика
-    const dailyMap = new Map<string, number>();
+    // Группировка расходов по дням для линейного графика (по валютам)
+    const dailyMap = new Map<string, { amount: number; currency: string }>();
     
     if (expensesData && expensesData.length > 0) {
       expensesData.forEach((expense) => {
         const day = format(new Date(expense.date), 'dd.MM');
-        const existing = dailyMap.get(day);
+        const expenseCurrency = (expense as any).currency || userCurrency || 'RUB';
+        const key = `${day}_${expenseCurrency}`;
+        const existing = dailyMap.get(key);
         if (existing) {
-          dailyMap.set(day, existing + Number(expense.amount));
+          dailyMap.set(key, { amount: existing.amount + Number(expense.amount), currency: expenseCurrency });
         } else {
-          dailyMap.set(day, Number(expense.amount));
+          dailyMap.set(key, { amount: Number(expense.amount), currency: expenseCurrency });
         }
       });
     }
 
     const dailyData = Array.from(dailyMap.entries())
-      .map(([date, amount]) => ({ date, amount }))
+      .map(([key, data]) => {
+        const [date] = key.split('_');
+        return { date, amount: data.amount, currency: data.currency };
+      })
       .sort((a, b) => {
         const [dayA, monthA] = a.date.split('.').map(Number);
         const [dayB, monthB] = b.date.split('.').map(Number);
@@ -222,6 +265,22 @@ const Reports = () => {
   const savingsRate = totalIncome > 0 ? (savings / totalIncome) * 100 : 0;
   const daysInMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).getDate();
   const avgDailyExpense = totalExpenses / daysInMonth;
+
+  // Функция для форматирования суммы с валютой
+  const formatAmountWithCurrency = (amount: number, currency: string) => {
+    const currencySymbols: Record<string, string> = {
+      RUB: '₽', USD: '$', EUR: '€', GBP: '£',
+      JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
+    };
+    const symbol = currencySymbols[currency] || currency;
+    return `${Math.round(amount).toLocaleString('ru-RU')} ${symbol}`;
+  };
+
+  // Получаем все валюты из доходов и расходов
+  const allCurrencies = new Set([
+    ...Object.keys(incomeByCurrency),
+    ...Object.keys(expensesByCurrency)
+  ]);
 
   return (
     <Layout selectedDate={selectedDate} onDateChange={setSelectedDate}>
@@ -240,9 +299,27 @@ const Reports = () => {
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
-                <p className="text-2xl font-bold text-success">
-                  {loading ? "—" : formatAmount(totalIncome)}
-                </p>
+                <div className="flex-1">
+                  {loading ? (
+                    <p className="text-2xl font-bold text-success">—</p>
+                  ) : allCurrencies.size > 1 ? (
+                    <div className="space-y-1">
+                      {Array.from(allCurrencies).map(currency => {
+                        const amount = incomeByCurrency[currency] || 0;
+                        if (amount === 0) return null;
+                        return (
+                          <p key={currency} className="text-xl font-bold text-success">
+                            {formatAmountWithCurrency(amount, currency)}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-2xl font-bold text-success">
+                      {formatAmountWithCurrency(totalIncome, Array.from(allCurrencies)[0] || userCurrency || 'RUB')}
+                    </p>
+                  )}
+                </div>
                 <TrendingUp className="h-5 w-5 text-success" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
@@ -259,9 +336,27 @@ const Reports = () => {
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
-                <p className="text-2xl font-bold text-destructive">
-                  {loading ? "—" : formatAmount(totalExpenses)}
-                </p>
+                <div className="flex-1">
+                  {loading ? (
+                    <p className="text-2xl font-bold text-destructive">—</p>
+                  ) : allCurrencies.size > 1 ? (
+                    <div className="space-y-1">
+                      {Array.from(allCurrencies).map(currency => {
+                        const amount = expensesByCurrency[currency] || 0;
+                        if (amount === 0) return null;
+                        return (
+                          <p key={currency} className="text-xl font-bold text-destructive">
+                            {formatAmountWithCurrency(amount, currency)}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-2xl font-bold text-destructive">
+                      {formatAmountWithCurrency(totalExpenses, Array.from(allCurrencies)[0] || userCurrency || 'RUB')}
+                    </p>
+                  )}
+                </div>
                 <TrendingDown className="h-5 w-5 text-destructive" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
@@ -278,9 +373,27 @@ const Reports = () => {
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
-                <p className="text-2xl font-bold">
-                  {loading ? "—" : formatAmount(avgDailyExpense)}
-                </p>
+                <div className="flex-1">
+                  {loading ? (
+                    <p className="text-2xl font-bold">—</p>
+                  ) : allCurrencies.size > 1 ? (
+                    <div className="space-y-1">
+                      {Array.from(allCurrencies).map(currency => {
+                        const amount = (expensesByCurrency[currency] || 0) / daysInMonth;
+                        if (amount === 0) return null;
+                        return (
+                          <p key={currency} className="text-xl font-bold">
+                            {formatAmountWithCurrency(amount, currency)}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-2xl font-bold">
+                      {formatAmountWithCurrency(avgDailyExpense, Array.from(allCurrencies)[0] || userCurrency || 'RUB')}
+                    </p>
+                  )}
+                </div>
                 <BarChart2 className="h-5 w-5 text-primary" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
@@ -303,7 +416,23 @@ const Reports = () => {
                 <PieChartIcon className="h-5 w-5 text-accent" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                {loading ? "—" : formatAmount(savings)} накоплено
+                {loading ? "—" : allCurrencies.size > 1 ? (
+                  <div className="space-y-0.5">
+                    {Array.from(allCurrencies).map(currency => {
+                      const income = incomeByCurrency[currency] || 0;
+                      const expense = expensesByCurrency[currency] || 0;
+                      const saving = income - expense;
+                      if (saving === 0 && income === 0) return null;
+                      return (
+                        <div key={currency}>
+                          {formatAmountWithCurrency(saving, currency)} накоплено
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  `${formatAmountWithCurrency(savings, Array.from(allCurrencies)[0] || userCurrency || 'RUB')} накоплено`
+                )}
               </p>
             </CardContent>
           </Card>
@@ -349,7 +478,10 @@ const Reports = () => {
                           ))}
                         </Pie>
                         <Tooltip 
-                          formatter={(value: number) => formatAmount(value)}
+                          formatter={(value: number, name: string, props: any) => {
+                            const currency = props.payload?.currency || userCurrency || 'RUB';
+                            return formatAmountWithCurrency(value, currency);
+                          }}
                           contentStyle={{ 
                             backgroundColor: 'hsl(var(--card))', 
                             border: '1px solid hsl(var(--border))',
@@ -390,7 +522,10 @@ const Reports = () => {
                             ))}
                           </Pie>
                           <Tooltip 
-                            formatter={(value: number) => formatAmount(value)}
+                            formatter={(value: number, name: string, props: any) => {
+                              const currency = props.payload?.currency || userCurrency || 'RUB';
+                              return formatAmountWithCurrency(value, currency);
+                            }}
                             contentStyle={{ 
                               backgroundColor: 'hsl(var(--card))', 
                               border: '1px solid hsl(var(--border))',
@@ -453,7 +588,10 @@ const Reports = () => {
                         tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
                       />
                       <Tooltip 
-                        formatter={(value: number) => formatAmount(value)}
+                        formatter={(value: number, name: string, props: any) => {
+                          const currency = props.payload?.currency || userCurrency || 'RUB';
+                          return formatAmountWithCurrency(value, currency);
+                        }}
                         contentStyle={{ 
                           backgroundColor: 'hsl(var(--card))', 
                           border: '1px solid hsl(var(--border))',
@@ -506,7 +644,10 @@ const Reports = () => {
                       tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
                     />
                     <Tooltip 
-                      formatter={(value: number) => formatAmount(value)}
+                      formatter={(value: number, name: string, props: any) => {
+                        const currency = props.payload?.currency || userCurrency || 'RUB';
+                        return formatAmountWithCurrency(value, currency);
+                      }}
                       contentStyle={{ 
                         backgroundColor: 'hsl(var(--card))', 
                         border: '1px solid hsl(var(--border))',

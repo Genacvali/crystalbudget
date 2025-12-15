@@ -23,7 +23,17 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const Categories = () => {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const saved = localStorage.getItem('selectedDate');
+    if (saved) {
+      try {
+        return new Date(saved);
+      } catch {
+        return new Date();
+      }
+    }
+    return new Date();
+  });
   const { toast } = useToast();
   const { user } = useAuth();
   const { currency: userCurrency } = useCurrency();
@@ -39,6 +49,11 @@ const Categories = () => {
   const [sortBy, setSortBy] = useState<"name" | "spent" | "remaining">("name");
   const [categoryDebts, setCategoryDebts] = useState<Record<string, Record<string, number>>>({});
   const [categoryCarryOvers, setCategoryCarryOvers] = useState<Record<string, Record<string, number>>>({});
+
+  // Сохраняем выбранную дату в localStorage
+  useEffect(() => {
+    localStorage.setItem('selectedDate', selectedDate.toISOString());
+  }, [selectedDate]);
 
   useEffect(() => {
     if (user) {
@@ -424,6 +439,26 @@ const Categories = () => {
 
     setLoading(true);
     try {
+      // First, get category data including zenmoney_id and linked_source_id
+      const { data: categoryData } = await supabase
+        .from('categories')
+        .select('id, user_id, zenmoney_id, linked_source_id')
+        .eq('id', categoryToDelete)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!categoryData) {
+        toast({
+          title: "Ошибка удаления",
+          description: "Категория не найдена или у вас нет прав на её удаление",
+          variant: "destructive",
+        });
+        setCategoryToDelete(null);
+        setDeleteDialogOpen(false);
+        setLoading(false);
+        return;
+      }
+
       // First, delete all category allocations (budget settings)
       const { error: allocError } = await supabase
         .from('category_allocations')
@@ -433,6 +468,43 @@ const Categories = () => {
       if (allocError) {
         console.error('Error deleting allocations:', allocError);
         // Continue anyway - allocations might not exist
+      }
+
+      // Delete bank_category_mapping entries that reference this category
+      // This table exists for ZenMoney integration and has a check constraint
+      // that prevents cascade deletes. We need to delete these entries manually.
+      try {
+        // Try multiple possible field combinations to delete related mappings
+        const deleteAttempts = [
+          // Try by category_id field
+          supabase.from('bank_category_mapping').delete().eq('category_id', categoryToDelete),
+          // Try by income_source_id if category is linked to a source
+          categoryData.linked_source_id ? supabase.from('bank_category_mapping').delete().eq('income_source_id', categoryData.linked_source_id) : null,
+        ];
+
+        // If category has zenmoney_id, also try deleting by that
+        if (categoryData.zenmoney_id) {
+          deleteAttempts.push(
+            supabase.from('bank_category_mapping').delete().eq('bank_category_id', categoryData.zenmoney_id).eq('type', 'expense'),
+            supabase.from('bank_category_mapping').delete().eq('zenmoney_id', categoryData.zenmoney_id).eq('type', 'expense'),
+            supabase.from('bank_category_mapping').delete().eq('bank_id', categoryData.zenmoney_id).eq('type', 'expense')
+          );
+        }
+
+        // Execute all delete attempts, ignoring errors for fields that don't exist
+        for (const attempt of deleteAttempts.filter(Boolean)) {
+          try {
+            const { error } = await attempt;
+            if (error && !error.message.includes('does not exist') && !error.message.includes('column') && !error.code?.includes('42703')) {
+              console.error('Error deleting bank_category_mapping:', error);
+            }
+          } catch (e) {
+            // Ignore individual errors
+          }
+        }
+      } catch (e) {
+        console.log('Error attempting to delete bank_category_mapping entries:', e);
+        // Continue anyway - we'll try to delete the category and see what happens
       }
 
       // Also check if there are expenses linked to this category
@@ -475,7 +547,12 @@ const Categories = () => {
         .eq('id', categoryToDelete)
         .eq('user_id', user.id); // Add user_id check for safety
 
-      if (error) throw error;
+      if (error) {
+        console.error('Delete error:', error);
+        // Extract more detailed error information
+        const errorDetails = (error as any).details || (error as any).hint || error.message;
+        throw new Error(errorDetails || error.message || 'Неизвестная ошибка');
+      }
 
       // Optimistically update UI without full reload
       setCategories(prev => prev.filter(c => c.id !== categoryToDelete));
