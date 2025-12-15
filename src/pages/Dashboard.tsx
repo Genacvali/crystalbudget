@@ -890,6 +890,25 @@ const Dashboard = () => {
         const carryOver = (categoryCarryOvers[category.id] || {})[currency] || 0;
         const totalAllocated = allocated + carryOver;
 
+        // Debug для категории "ЗП Гены"
+        if (category.name === "ЗП Гены" && currency === 'RUB') {
+          const availableBudget = totalAllocated - debt;
+          const percentageFromBase = totalAllocated > 0 ? ((spent / totalAllocated) * 100).toFixed(2) : 'N/A';
+          const percentageFromAvailable = availableBudget > 0 ? ((spent / availableBudget) * 100).toFixed(2) : 'N/A';
+          console.log(`[DEBUG Dashboard] Расчет бюджета для ЗП Гены:`, {
+            categoryName: category.name,
+            currency,
+            baseAllocated: allocated,
+            carryOver,
+            debt,
+            totalAllocated,
+            spent,
+            availableBudget,
+            percentageFromBase,
+            percentageFromAvailable
+          });
+        }
+
         budgetsByCurrency[currency] = {
           allocated: totalAllocated,
           spent,

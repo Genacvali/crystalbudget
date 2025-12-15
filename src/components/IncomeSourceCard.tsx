@@ -125,13 +125,13 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                         <div>
                           <p className="text-[9px] text-muted-foreground">Получено</p>
                           <p className="text-xs font-bold text-success break-words leading-tight">
-                            {currencySummary.totalIncome.toLocaleString('ru-RU')} {symbol}
+                            {Math.round(currencySummary.totalIncome).toLocaleString('ru-RU')} {symbol}
                           </p>
                         </div>
                         <div>
                           <p className="text-[9px] text-muted-foreground">Потрачено</p>
                           <p className="text-xs font-bold text-destructive break-words leading-tight">
-                            {currencySummary.totalSpent.toLocaleString('ru-RU')} {symbol}
+                            {Math.round(currencySummary.totalSpent).toLocaleString('ru-RU')} {symbol}
                           </p>
                         </div>
                       </div>
@@ -148,7 +148,7 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                         <div className="flex items-center gap-1 p-1 bg-destructive/10 rounded">
                           <AlertCircle className="h-2.5 w-2.5 text-destructive shrink-0" />
                           <p className="text-[9px] font-medium text-destructive">
-                            +{Math.abs(currencySummary.totalSpent - currencySummary.totalIncome).toLocaleString('ru-RU')} {symbol}
+                            +{Math.round(Math.abs(currencySummary.totalSpent - currencySummary.totalIncome)).toLocaleString('ru-RU')} {symbol}
                           </p>
                         </div>
                       )}
@@ -165,8 +165,8 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                           currencyHasDebt ? "text-destructive" : "text-success"
                         )}>
                           {currencyHasDebt
-                            ? currencySummary.debt.toLocaleString('ru-RU')
-                            : currencySummary.remaining.toLocaleString('ru-RU')} {symbol}
+                            ? Math.round(currencySummary.debt).toLocaleString('ru-RU')
+                            : Math.round(currencySummary.remaining).toLocaleString('ru-RU')} {symbol}
                         </span>
                       </div>
                     </div>
@@ -193,16 +193,16 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                         <p className="text-xs text-muted-foreground mb-1">Получено</p>
                         <p className="text-base font-bold text-success break-words">
                           {currency && symbol
-                            ? `${summary.totalIncome.toLocaleString('ru-RU')} ${symbol}`
-                            : formatAmount(summary.totalIncome)}
+                            ? `${Math.round(summary.totalIncome).toLocaleString('ru-RU')} ${symbol}`
+                            : formatAmount(Math.round(summary.totalIncome))}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">Потрачено</p>
                         <p className="text-base font-bold text-destructive break-words">
                           {currency && symbol
-                            ? `${summary.totalSpent.toLocaleString('ru-RU')} ${symbol}`
-                            : formatAmount(summary.totalSpent)}
+                            ? `${Math.round(summary.totalSpent).toLocaleString('ru-RU')} ${symbol}`
+                            : formatAmount(Math.round(summary.totalSpent))}
                         </p>
                       </div>
                     </div>
@@ -246,8 +246,8 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-destructive">
                           Превышен на {currency && symbol
-                            ? `${overAmount.toLocaleString('ru-RU')} ${symbol}`
-                            : formatAmount(overAmount)}
+                            ? `${Math.round(overAmount).toLocaleString('ru-RU')} ${symbol}`
+                            : formatAmount(Math.round(overAmount))}
                         </p>
                       </div>
                     </div>
@@ -284,11 +284,11 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                           )}>
                             {hasDebt
                               ? (currency && symbol
-                                  ? `${summary.debt.toLocaleString('ru-RU')} ${symbol}`
-                                  : formatAmount(summary.debt))
+                                  ? `${Math.round(summary.debt).toLocaleString('ru-RU')} ${symbol}`
+                                  : formatAmount(Math.round(summary.debt)))
                               : (currency && symbol
-                                  ? `${summary.remaining.toLocaleString('ru-RU')} ${symbol}`
-                                  : formatAmount(summary.remaining))}
+                                  ? `${Math.round(summary.remaining).toLocaleString('ru-RU')} ${symbol}`
+                                  : formatAmount(Math.round(summary.remaining)))}
                           </span>
                         </div>
                       </div>

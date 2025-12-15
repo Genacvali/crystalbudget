@@ -768,6 +768,7 @@ const Categories = () => {
               incomeSources={incomeSources}
               onEdit={handleEditCategory}
               onDelete={handleDeleteClick}
+              hideBudgetDetails={true}
             />
           ))}
         </div>
