@@ -266,13 +266,11 @@ export function CategoryCard({
                   
                   return (
                     <div key={currency} className="space-y-0.5">
-                      {/* Основная строка: Потрачено из Доступно */}
+                      {/* Итого доступно */}
                       <div className="text-[11px]">
+                        <span className="text-muted-foreground">Итого доступно: </span>
                         <span className="font-bold">
-                          {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {' '}из {currencyAvailableBudget.toLocaleString('ru-RU')} {symbol}
+                          {currencyAvailableBudget.toLocaleString('ru-RU')} {symbol}
                         </span>
                       </div>
                       
@@ -283,12 +281,10 @@ export function CategoryCard({
             ) : (
               // Single currency - simple and clear
               <div className="space-y-0.5">
-                {/* Основная строка: Потрачено из Доступно */}
+                {/* Итого доступно */}
                 <div className="text-xs">
-                  <span className="font-bold">{formatAmount(budget.spent)}</span>
-                  <span className="text-muted-foreground">
-                    {' '}из {formatAmount(availableBudget)}
-                  </span>
+                  <span className="text-muted-foreground">Итого доступно: </span>
+                  <span className="font-bold">{formatAmount(availableBudget)}</span>
                 </div>
                 
               </div>

@@ -214,6 +214,15 @@ const Dashboard = () => {
       const previousTotalIncome = prevIncomeByCurrency[primaryCurrency] || 0;
       const previousTotalExpenses = prevExpenseByCurrency[primaryCurrency] || 0;
       const calculatedCarryOver = previousTotalIncome - previousTotalExpenses;
+      
+      // Debug: Log carry-over calculation
+      console.log('[DEBUG LoadData] Перенос баланса:', {
+        previousTotalIncome: previousTotalIncome.toFixed(2),
+        previousTotalExpenses: previousTotalExpenses.toFixed(2),
+        calculatedCarryOver: calculatedCarryOver.toFixed(2),
+        currency: primaryCurrency
+      });
+      
       setCarryOverBalance(calculatedCarryOver);
 
       // Load income sources
@@ -252,10 +261,6 @@ const Dashboard = () => {
       const mappedCategories: Category[] = (categoriesData || []).map(item => {
         const categoryAllocations = (allocationsData || []).filter(alloc => alloc.category_id === item.id).map(alloc => {
           const currency = (alloc as any).currency || 'RUB';
-          // Debug: log currency for categories with multiple currencies
-          if (item.name === 'Красота' || item.name === 'просто так') {
-            console.log(`Category ${item.name} allocation: currency=${currency}, value=${alloc.allocation_value}`);
-          }
           return {
             id: alloc.id,
             incomeSourceId: alloc.income_source_id,
@@ -282,6 +287,28 @@ const Dashboard = () => {
         error: incomesError
       } = await supabase.from('incomes').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
       if (incomesError) throw incomesError;
+      
+      // Debug: Log loaded incomes
+      console.log('[DEBUG LoadData] Загружено доходов:', (incomesData || []).length);
+      console.log('[DEBUG LoadData] Диапазон дат:', startOfMonth, 'до', endOfMonth);
+      console.log('[DEBUG LoadData] Пользователи:', familyUserIds);
+      if ((incomesData || []).length > 0) {
+        const totalIncome = (incomesData || []).reduce((sum, inc) => sum + Number(inc.amount || 0), 0);
+        console.log('[DEBUG LoadData] Сумма доходов:', totalIncome);
+        
+        // Check for incomes with null or zero amounts
+        const incomesWithNullAmount = (incomesData || []).filter(inc => !inc.amount || Number(inc.amount) === 0);
+        if (incomesWithNullAmount.length > 0) {
+          console.log('[DEBUG LoadData] Доходов с нулевой суммой:', incomesWithNullAmount.length);
+        }
+        
+        // Check for incomes with negative amounts
+        const incomesWithNegativeAmount = (incomesData || []).filter(inc => Number(inc.amount) < 0);
+        if (incomesWithNegativeAmount.length > 0) {
+          console.log('[DEBUG LoadData] Доходов с отрицательной суммой:', incomesWithNegativeAmount.length);
+        }
+      }
+      
       setIncomes(incomesData || []);
 
       // Load expenses for selected month (family scope)
@@ -290,6 +317,42 @@ const Dashboard = () => {
         error: expensesError
       } = await supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
       if (expensesError) throw expensesError;
+      
+      // Debug: Log loaded expenses
+      console.log('[DEBUG LoadData] Загружено расходов:', (expensesData || []).length);
+      if ((expensesData || []).length > 0) {
+        const totalExpense = (expensesData || []).reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
+        console.log('[DEBUG LoadData] Сумма расходов:', totalExpense);
+        
+        // Check for expenses with null or zero amounts
+        const expensesWithNullAmount = (expensesData || []).filter(exp => !exp.amount || Number(exp.amount) === 0);
+        if (expensesWithNullAmount.length > 0) {
+          console.log('[DEBUG LoadData] Расходов с нулевой суммой:', expensesWithNullAmount.length);
+        }
+        
+        // Check for expenses with negative amounts
+        const expensesWithNegativeAmount = (expensesData || []).filter(exp => Number(exp.amount) < 0);
+        if (expensesWithNegativeAmount.length > 0) {
+          console.log('[DEBUG LoadData] Расходов с отрицательной суммой:', expensesWithNegativeAmount.length);
+        }
+        
+        const expensesWithoutCategory = (expensesData || []).filter(exp => !exp.category_id);
+        if (expensesWithoutCategory.length > 0) {
+          console.log('[DEBUG LoadData] Расходов без категории (корректировки):', expensesWithoutCategory.length);
+          const totalAdjustments = expensesWithoutCategory.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
+          console.log('[DEBUG LoadData] Сумма корректировок:', totalAdjustments);
+        }
+        
+        // Check date range issues
+        const expensesOutsideRange = (expensesData || []).filter(exp => {
+          const expDate = new Date(exp.date);
+          return expDate < new Date(startOfMonth) || expDate > new Date(endOfMonth);
+        });
+        if (expensesOutsideRange.length > 0) {
+          console.warn('[DEBUG LoadData] Расходов вне диапазона дат:', expensesOutsideRange.length);
+        }
+      }
+      
       setExpenses(expensesData || []);
 
       // Check if ZenMoney is connected  
@@ -306,7 +369,11 @@ const Dashboard = () => {
       const {
         data: zenmoneyAccountsData,
         error: zenmoneyAccountsError
-      } = await (supabase as any).from('zenmoney_accounts').select('*').in('user_id', familyUserIds).eq('archive', false);
+      } = await (supabase as any)
+        .from('zenmoney_accounts')
+        .select('*')
+        .or(familyUserIds.map(id => `user_id.eq.${id}`).join(','))
+        .eq('archive', false);
 
       if (!zenmoneyAccountsError && zenmoneyAccountsData) {
         setZenmoneyAccounts(zenmoneyAccountsData.map((acc: any) => ({
@@ -323,7 +390,6 @@ const Dashboard = () => {
 
       if (isZenMoneyConnected) {
         if (!zenmoneyAccountsData || zenmoneyAccountsData.length === 0) {
-          console.log('ZenMoney connected but no accounts found. Triggering sync...');
           shouldSync = true;
         } else {
           // Check age of data
@@ -332,7 +398,6 @@ const Dashboard = () => {
           const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
           if (lastUpdate < oneHourAgo) {
-            console.log('ZenMoney data is stale (>1h), triggering background sync...');
             shouldSync = true;
           }
         }
@@ -344,7 +409,6 @@ const Dashboard = () => {
           body: { syncType: 'all' }
         }).then(({ data, error }) => {
           if (!error && data && data.accounts && data.accounts.length > 0) {
-            console.log('✅ Received updated accounts from sync:', data.accounts);
             setZenmoneyAccounts(data.accounts.map((acc: any) => ({
               id: acc.id,
               title: acc.title,
@@ -361,16 +425,14 @@ const Dashboard = () => {
           const maxAttempts = 15;
           const pollInterval = setInterval(async () => {
             attempts++;
-            console.log(`Polling for accounts (attempt ${attempts}/${maxAttempts})...`);
 
             const { data: newAccounts } = await (supabase as any)
               .from('zenmoney_accounts')
               .select('*')
-              .in('user_id', familyUserIds)
+              .or(familyUserIds.map(id => `user_id.eq.${id}`).join(','))
               .eq('archive', false);
 
             if (newAccounts && newAccounts.length > 0) {
-              console.log('Accounts found in DB!', newAccounts);
               setZenmoneyAccounts(newAccounts.map((acc: any) => ({
                 id: acc.id,
                 title: acc.title,
@@ -380,7 +442,6 @@ const Dashboard = () => {
               })));
               clearInterval(pollInterval);
             } else if (attempts >= maxAttempts) {
-              console.log('Stopped polling for accounts.');
               clearInterval(pollInterval);
             }
           }, 2000);
@@ -406,9 +467,6 @@ const Dashboard = () => {
       // Calculate debts and carry-overs for each category from previous month (by currency)
       const debts: Record<string, Record<string, number>> = {};
       const carryOvers: Record<string, Record<string, number>> = {};
-      console.log('Previous month range:', previousMonthStart, '-', previousMonthEnd);
-      console.log('Previous incomes:', previousIncomesData?.length);
-      console.log('Previous expenses:', previousExpensesData?.length);
 
       mappedCategories.forEach(category => {
         // Group expenses by currency for this category
@@ -485,7 +543,6 @@ const Dashboard = () => {
               debts[category.id] = {};
             }
             debts[category.id][currency] = Math.abs(balance);
-            console.log(`Category ${category.name} (${currency}) has debt: spent=${spent}, allocated=${allocated}, debt=${Math.abs(balance)}`);
           }
           // If under-spent, save the carry-over
           else if (balance > 0) {
@@ -493,15 +550,12 @@ const Dashboard = () => {
               carryOvers[category.id] = {};
             }
             carryOvers[category.id][currency] = balance;
-            console.log(`Category ${category.name} (${currency}) has carry-over: spent=${spent}, allocated=${allocated}, carryOver=${balance}`);
           }
         });
       });
 
       setCategoryDebts(debts);
       setCategoryCarryOvers(carryOvers);
-      console.log('Category debts from previous month:', debts);
-      console.log('Category carry-overs from previous month:', carryOvers);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       toast({
@@ -576,7 +630,6 @@ const Dashboard = () => {
           }
         );
       } catch (notificationError) {
-        console.error('Failed to create notification:', notificationError);
         // Don't fail the whole operation if notification fails
       }
     } catch (error) {
@@ -653,7 +706,6 @@ const Dashboard = () => {
           }
         );
       } catch (notificationError) {
-        console.error('Failed to create notification:', notificationError);
         // Don't fail the whole operation if notification fails
       }
     } catch (error) {
@@ -840,10 +892,6 @@ const Dashboard = () => {
         });
 
         // Debug: log currencies for categories with multiple currencies
-        const currencies = Object.keys(allocationsByCurrency);
-        if (currencies.length > 1) {
-          console.log(`Category ${category.name} has ${currencies.length} currencies:`, currencies);
-        }
       } else {
         // Legacy support - use user's currency
         const defaultCurrency = userCurrency || 'RUB';
@@ -893,20 +941,6 @@ const Dashboard = () => {
         // Debug для категории "ЗП Гены"
         if (category.name === "ЗП Гены" && currency === 'RUB') {
           const availableBudget = totalAllocated - debt;
-          const percentageFromBase = totalAllocated > 0 ? ((spent / totalAllocated) * 100).toFixed(2) : 'N/A';
-          const percentageFromAvailable = availableBudget > 0 ? ((spent / availableBudget) * 100).toFixed(2) : 'N/A';
-          console.log(`[DEBUG Dashboard] Расчет бюджета для ЗП Гены:`, {
-            categoryName: category.name,
-            currency,
-            baseAllocated: allocated,
-            carryOver,
-            debt,
-            totalAllocated,
-            spent,
-            availableBudget,
-            percentageFromBase,
-            percentageFromAvailable
-          });
         }
 
         budgetsByCurrency[currency] = {
@@ -945,10 +979,6 @@ const Dashboard = () => {
       const currenciesCount = Object.keys(budgetsByCurrency).length;
       const hasCurrencies = currenciesCount > 0;
 
-      // Debug: log if category has currencies
-      if (hasCurrencies) {
-        console.log(`Category ${category.name} has ${currenciesCount} currencies in budgetsByCurrency:`, Object.keys(budgetsByCurrency));
-      }
 
       return {
         categoryId: category.id,
@@ -967,15 +997,70 @@ const Dashboard = () => {
     const incomeByCurrency: Record<string, number> = {};
     const expenseByCurrency: Record<string, number> = {};
 
+    // Debug: Log all transactions
+    console.log('[DEBUG Balance] Всего доходов:', incomes.length);
+    console.log('[DEBUG Balance] Всего расходов:', expenses.length);
+    
+    let skippedIncomes = 0;
+    let skippedExpenses = 0;
+    
     incomes.forEach(inc => {
       const currency = inc.currency || userCurrency || 'RUB';
-      incomeByCurrency[currency] = (incomeByCurrency[currency] || 0) + Number(inc.amount);
+      const amount = Number(inc.amount);
+      
+      // Skip if amount is invalid
+      if (isNaN(amount) || amount === null || amount === undefined) {
+        skippedIncomes++;
+        console.warn('[DEBUG Balance] Пропущен доход (невалидная сумма):', { id: inc.id, amount: inc.amount, currency, date: inc.date, source_id: inc.source_id });
+        return;
+      }
+      
+      incomeByCurrency[currency] = (incomeByCurrency[currency] || 0) + amount;
+      
+      // Debug: Log suspicious transactions
+      if (amount <= 0) {
+        console.warn('[DEBUG Balance] Подозрительный доход (<= 0):', { id: inc.id, amount, currency, date: inc.date, source_id: inc.source_id });
+      }
     });
 
     expenses.forEach(exp => {
       const currency = exp.currency || userCurrency || 'RUB';
-      expenseByCurrency[currency] = (expenseByCurrency[currency] || 0) + Number(exp.amount);
+      const amount = Number(exp.amount);
+      
+      // Skip if amount is invalid
+      if (isNaN(amount) || amount === null || amount === undefined) {
+        skippedExpenses++;
+        console.warn('[DEBUG Balance] Пропущен расход (невалидная сумма):', { id: exp.id, amount: exp.amount, currency, date: exp.date, category_id: exp.category_id });
+        return;
+      }
+      
+      expenseByCurrency[currency] = (expenseByCurrency[currency] || 0) + amount;
+      
+      // Debug: Log suspicious transactions
+      if (amount <= 0) {
+        console.warn('[DEBUG Balance] Подозрительный расход (<= 0):', { id: exp.id, amount, currency, date: exp.date, category_id: exp.category_id });
+      }
+      
+      // Debug: Log expenses without category (balance adjustments)
+      if (!exp.category_id) {
+        console.log('[DEBUG Balance] Расход без категории (корректировка):', { id: exp.id, amount, currency, date: exp.date, description: exp.description });
+      }
     });
+    
+    if (skippedIncomes > 0 || skippedExpenses > 0) {
+      console.warn('[DEBUG Balance] Пропущено транзакций:', { skippedIncomes, skippedExpenses });
+    }
+    
+    // Debug: Log totals by currency
+    console.log('[DEBUG Balance] Доходы по валютам:', incomeByCurrency);
+    console.log('[DEBUG Balance] Расходы по валютам:', expenseByCurrency);
+    
+    // Debug: Calculate and log total sums for verification
+    const totalIncomeSum = Object.values(incomeByCurrency).reduce((sum, val) => sum + val, 0);
+    const totalExpenseSum = Object.values(expenseByCurrency).reduce((sum, val) => sum + val, 0);
+    console.log('[DEBUG Balance] Итоговая сумма доходов:', totalIncomeSum);
+    console.log('[DEBUG Balance] Итоговая сумма расходов:', totalExpenseSum);
+    console.log('[DEBUG Balance] Разница (доходы - расходы):', totalIncomeSum - totalExpenseSum);
 
     const allCurrencies = new Set([
       ...Object.keys(incomeByCurrency),
@@ -1001,6 +1086,17 @@ const Dashboard = () => {
         : balance;
 
       result[currency] = { income, expense, balance, totalBalance };
+      
+      // Debug: Log balance calculation for primary currency
+      if (currency === primaryCurrency) {
+        console.log('[DEBUG Balance] Расчет баланса для', currency, ':', {
+          income,
+          expense,
+          balance: balance.toFixed(2),
+          carryOverBalance: (carryOverBalance || 0).toFixed(2),
+          totalBalance: totalBalance.toFixed(2)
+        });
+      }
     });
 
     return result;
@@ -1197,7 +1293,6 @@ const Dashboard = () => {
         <Button
           className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70 text-success-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
           onClick={() => {
-            console.log('Income button clicked');
             setIncomeDialogOpen(true);
           }}
         >
@@ -1207,16 +1302,11 @@ const Dashboard = () => {
         <Button
           className="flex-1 h-auto py-2.5 sm:py-3 text-sm bg-gradient-to-r from-destructive to-destructive/80 hover:from-destructive/90 hover:to-destructive/70 text-destructive-foreground border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
           onClick={() => {
-            console.log('Expense button clicked');
             setExpenseDialogOpen(true);
           }}
         >
           <Plus className="h-5 w-5 mr-1 sm:mr-2 transition-transform duration-300 hover:rotate-90" strokeWidth={2.5} />
           <span className="hidden xs:inline">Добавить </span>Расход
-        </Button>
-        <Button className="h-auto py-2.5 sm:py-3 text-sm px-3 sm:px-4 flex items-center gap-2" variant="secondary" onClick={() => setAiChatOpen(true)}>
-          <Bot className="h-5 w-5" />
-          <span className="hidden sm:inline font-medium">G.A.I.A.</span>
         </Button>
       </div>
 
