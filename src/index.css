@@ -118,6 +118,289 @@ All colors MUST be HSL.
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
+  .euphoric {
+    --background: 280 40% 95%;
+    --foreground: 280 30% 15%;
+
+    --card: 280 35% 98%;
+    --card-foreground: 280 30% 15%;
+
+    --popover: 280 35% 98%;
+    --popover-foreground: 280 30% 15%;
+
+    --primary: 280 70% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 280 30% 90%;
+    --secondary-foreground: 280 30% 15%;
+
+    --muted: 280 30% 90%;
+    --muted-foreground: 280 20% 40%;
+
+    --accent: 320 70% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 142 70% 50%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 358 75% 65%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 38 90% 60%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 280 30% 85%;
+    --input: 280 30% 85%;
+    --ring: 280 70% 60%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(280 70% 60%), hsl(320 70% 65%));
+    --gradient-success: linear-gradient(135deg, hsl(142 70% 50%), hsl(158 65% 55%));
+    --gradient-subtle: linear-gradient(180deg, hsl(280 40% 95%), hsl(280 35% 98%));
+    --sidebar-background: 280 35% 98%;
+    --sidebar-foreground: 280 30% 15%;
+    --sidebar-primary: 280 70% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 280 30% 90%;
+    --sidebar-accent-foreground: 280 30% 15%;
+    --sidebar-border: 280 30% 85%;
+    --sidebar-ring: 280 70% 60%;
+  }
+
+  .newyear {
+    --background: 0 0% 98%;
+    --foreground: 0 50% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 50% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 50% 20%;
+
+    --primary: 142 70% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 30% 95%;
+    --secondary-foreground: 0 50% 20%;
+
+    --muted: 0 20% 92%;
+    --muted-foreground: 0 30% 40%;
+
+    --accent: 0 70% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 45 90% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 0 30% 88%;
+    --input: 0 30% 88%;
+    --ring: 142 70% 45%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(142 70% 45%), hsl(0 70% 50%));
+    --gradient-success: linear-gradient(135deg, hsl(142 70% 45%), hsl(158 65% 55%));
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 98%), hsl(0 20% 95%));
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 50% 20%;
+    --sidebar-primary: 142 70% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 30% 95%;
+    --sidebar-accent-foreground: 0 50% 20%;
+    --sidebar-border: 0 30% 88%;
+    --sidebar-ring: 142 70% 45%;
+  }
+
+  .night {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 88%;
+
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 88%;
+
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 88%;
+
+    --primary: 220 20% 50%;
+    --primary-foreground: 0 0% 95%;
+
+    --secondary: 0 0% 11%;
+    --secondary-foreground: 0 0% 88%;
+
+    --muted: 0 0% 11%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 220 15% 45%;
+    --accent-foreground: 0 0% 95%;
+
+    --success: 142 30% 45%;
+    --success-foreground: 0 0% 95%;
+
+    --destructive: 0 30% 50%;
+    --destructive-foreground: 0 0% 95%;
+
+    --warning: 38 40% 50%;
+    --warning-foreground: 0 0% 95%;
+
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 220 20% 50%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(220 20% 50%), hsl(220 15% 45%));
+    --gradient-success: linear-gradient(135deg, hsl(142 30% 45%), hsl(158 30% 50%));
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 7%), hsl(0 0% 9%));
+    --sidebar-background: 0 0% 9%;
+    --sidebar-foreground: 0 0% 88%;
+    --sidebar-primary: 220 20% 50%;
+    --sidebar-primary-foreground: 0 0% 95%;
+    --sidebar-accent: 0 0% 11%;
+    --sidebar-accent-foreground: 0 0% 88%;
+    --sidebar-border: 0 0% 15%;
+    --sidebar-ring: 220 20% 50%;
+  }
+}
+
+/* Новогодние эффекты */
+html.newyear {
+  position: relative;
+}
+
+html.newyear::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 15% 25%, hsla(142, 70%, 45%, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 85% 75%, hsla(0, 70%, 50%, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, hsla(45, 90%, 55%, 0.04) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+html.newyear body {
+  position: relative;
+  z-index: 1;
+}
+
+/* Гирлянда эффект на header */
+html.newyear header::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(142, 70%, 45%) 8%,
+    transparent 16%,
+    hsl(0, 70%, 50%) 24%,
+    transparent 32%,
+    hsl(45, 90%, 55%) 40%,
+    transparent 48%,
+    hsl(0, 70%, 50%) 56%,
+    transparent 64%,
+    hsl(142, 70%, 45%) 72%,
+    transparent 80%,
+    hsl(45, 90%, 55%) 88%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: garland 4s linear infinite;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes garland {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 200% 0%;
+  }
+}
+
+/* Плавающие ёлочки */
+html.newyear::after {
+  content: '🎄';
+  position: fixed;
+  font-size: 1.5rem;
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 0;
+  animation: float-tree 8s ease-in-out infinite;
+  top: 10%;
+  right: 5%;
+}
+
+@keyframes float-tree {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+    opacity: 0.08;
+  }
+  25% {
+    transform: translateY(-15px) rotate(-3deg) scale(1.1);
+    opacity: 0.12;
+  }
+  50% {
+    transform: translateY(-25px) rotate(3deg) scale(1.05);
+    opacity: 0.1;
+  }
+  75% {
+    transform: translateY(-10px) rotate(-2deg) scale(1.08);
+    opacity: 0.11;
+  }
+}
+
+/* Снежинки */
+html.newyear body::before {
+  content: '❄️ ❄️ ❄️';
+  position: fixed;
+  font-size: 0.9rem;
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+  animation: snowflake 12s linear infinite;
+  top: -30px;
+  left: 10%;
+  white-space: nowrap;
+}
+
+html.newyear body::after {
+  content: '❄️ ❄️';
+  position: fixed;
+  font-size: 0.7rem;
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: 0;
+  animation: snowflake 15s linear infinite;
+  top: -30px;
+  left: 60%;
+  animation-delay: 3s;
+  white-space: nowrap;
+}
+
+@keyframes snowflake {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+  100% {
+    transform: translateY(calc(100vh + 30px)) rotate(360deg);
+    opacity: 0;
+  }
 }
 
 @layer base {

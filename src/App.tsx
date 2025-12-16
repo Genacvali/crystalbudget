@@ -48,7 +48,7 @@ const queryClient = new QueryClient({
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem themes={["light", "dark", "euphoric", "newyear", "night", "system"]}>
       <ThemeColorUpdater />
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>

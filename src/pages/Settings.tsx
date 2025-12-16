@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
-import { LogOut, Moon, Sun, Monitor, Users, Copy, UserPlus, Trash2, DollarSign, Upload } from "lucide-react";
+import { LogOut, Moon, Sun, Sparkles, TreePine, Eye, Users, Copy, UserPlus, Trash2, DollarSign, Upload } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -1099,7 +1099,7 @@ const Settings = () => {
             <CardDescription>Выберите тему интерфейса</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <Button
                 variant={theme === "light" ? "default" : "outline"}
                 onClick={() => setTheme("light")}
@@ -1117,12 +1117,28 @@ const Settings = () => {
                 <span className="text-xs">Темная</span>
               </Button>
               <Button
-                variant={theme === "system" ? "default" : "outline"}
-                onClick={() => setTheme("system")}
+                variant={theme === "euphoric" ? "default" : "outline"}
+                onClick={() => setTheme("euphoric")}
                 className="flex flex-col items-center gap-2 h-auto py-3"
               >
-                <Monitor className="h-5 w-5" />
-                <span className="text-xs">Системная</span>
+                <Sparkles className="h-5 w-5" />
+                <span className="text-xs">Айфори</span>
+              </Button>
+              <Button
+                variant={theme === "newyear" ? "default" : "outline"}
+                onClick={() => setTheme("newyear")}
+                className="flex flex-col items-center gap-2 h-auto py-3"
+              >
+                <TreePine className="h-5 w-5" />
+                <span className="text-xs">Новогодняя</span>
+              </Button>
+              <Button
+                variant={theme === "night" ? "default" : "outline"}
+                onClick={() => setTheme("night")}
+                className="flex flex-col items-center gap-2 h-auto py-3"
+              >
+                <Eye className="h-5 w-5" />
+                <span className="text-xs">Ночная</span>
               </Button>
             </div>
           </CardContent>
