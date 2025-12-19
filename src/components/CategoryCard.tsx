@@ -168,13 +168,13 @@ export function CategoryCard({
       <>
         <div 
           className={cn(
-            "group relative bg-card rounded-lg border p-3 transition-all duration-200",
+        "group relative bg-card rounded-lg border p-3 transition-all duration-200",
             hideBudgetDetails ? "" : "cursor-pointer hover:shadow-md hover:border-primary/50",
-            isOverBudget ? "border-destructive/40 bg-destructive/5" : "border-border"
+        isOverBudget ? "border-destructive/40 bg-destructive/5" : "border-border"
           )}
           onClick={hideBudgetDetails ? undefined : () => setDetailsOpen(true)}
         >
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
           {/* Иконка */}
           <div className="text-3xl shrink-0">
             {category.icon}
@@ -233,15 +233,15 @@ export function CategoryCard({
               </div>
             ) : (
               !hideBudgetDetails && (
-                <div className="relative mb-1">
-                  <Progress 
-                    value={Math.min(usedPercentage, 100)} 
-                    className={cn(
-                      "h-1 rounded-full",
-                      isOverBudget && "bg-destructive/20"
-                    )}
-                  />
-                </div>
+              <div className="relative mb-1">
+                <Progress 
+                  value={Math.min(usedPercentage, 100)} 
+                  className={cn(
+                    "h-1 rounded-full",
+                    isOverBudget && "bg-destructive/20"
+                  )}
+                />
+              </div>
               )
             )}
             
@@ -270,7 +270,7 @@ export function CategoryCard({
                       <div className="text-[11px]">
                         <span className="text-muted-foreground">Итого доступно: </span>
                         <span className="font-bold">
-                          {currencyAvailableBudget.toLocaleString('ru-RU')} {symbol}
+                          {Math.round(currencyAvailableBudget).toLocaleString('ru-RU')} {symbol}
                         </span>
                       </div>
                       
@@ -331,7 +331,7 @@ export function CategoryCard({
                       ) : null}
                       {!currencyIsOverBudget && currencyRemaining > 0 ? (
                         <div className="text-[9px] text-success font-medium">
-                          {currencyRemaining.toLocaleString('ru-RU')} {symbol}
+                          {Math.round(currencyRemaining).toLocaleString('ru-RU')} {symbol}
                         </div>
                       ) : null}
                       {currencyIsOverBudget && currencyOverBudget > 0 ? (
@@ -341,7 +341,7 @@ export function CategoryCard({
                       ) : null}
                       {currencyIsOverBudget && currencyOverBudget > 0 ? (
                         <div className="text-[9px] text-destructive font-medium">
-                          {currencyOverBudget.toLocaleString('ru-RU')} {symbol}
+                          {Math.round(currencyOverBudget).toLocaleString('ru-RU')} {symbol}
                         </div>
                       ) : null}
                     </div>
@@ -351,34 +351,34 @@ export function CategoryCard({
             ) : (
               // Single currency - show standard view
               !hideBudgetDetails && (
-                <>
-                  <div className={cn(
-                    "text-lg font-bold",
-                    isOverBudget ? "text-destructive" : "text-foreground"
-                  )}>
-                    {usedPercentage.toFixed(0)}%
-                  </div>
-                  {!isOverBudget && remaining > 0 ? (
-                    <>
-                      <div className="text-[9px] text-muted-foreground font-medium">
-                        осталось
-                      </div>
-                      <div className="text-[10px] text-success font-medium">
-                        {formatAmount(remaining)}
-                      </div>
-                    </>
-                  ) : null}
-                  {isOverBudget ? (
-                    <>
-                      <div className="text-[9px] text-muted-foreground font-medium">
-                        превышено
-                      </div>
-                      <div className="text-[10px] text-destructive font-medium">
-                        {formatAmount(Math.abs(remaining))}
-                      </div>
-                    </>
-                  ) : null}
-                </>
+              <>
+                <div className={cn(
+                  "text-lg font-bold",
+                  isOverBudget ? "text-destructive" : "text-foreground"
+                )}>
+                  {usedPercentage.toFixed(0)}%
+                </div>
+                {!isOverBudget && remaining > 0 ? (
+                  <>
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      осталось
+                    </div>
+                    <div className="text-[10px] text-success font-medium">
+                      {formatAmount(remaining)}
+                    </div>
+                  </>
+                ) : null}
+                {isOverBudget ? (
+                  <>
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      превышено
+                    </div>
+                    <div className="text-[10px] text-destructive font-medium">
+                      {formatAmount(Math.abs(remaining))}
+                    </div>
+                  </>
+                ) : null}
+              </>
               )
             )}
           </div>
@@ -430,9 +430,9 @@ export function CategoryCard({
     <>
       <div 
         className={cn(
-          "group relative bg-card rounded-lg border p-3 transition-all duration-200",
+      "group relative bg-card rounded-lg border p-3 transition-all duration-200",
           hideBudgetDetails ? "" : "cursor-pointer hover:shadow-md hover:border-primary/50",
-          isOverBudget ? "border-destructive/40 bg-destructive/5" : "border-border"
+      isOverBudget ? "border-destructive/40 bg-destructive/5" : "border-border"
         )}
         onClick={hideBudgetDetails ? undefined : () => setDetailsOpen(true)}
       >
@@ -445,15 +445,15 @@ export function CategoryCard({
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-sm truncate mb-1">{category.name}</h3>
             {!hideBudgetDetails && (
-              <Badge 
-                variant={status.color === 'success' ? 'default' : status.color}
-                className={cn(
-                  "text-[10px] font-semibold px-2 py-0",
-                  status.color === 'success' && "bg-success text-success-foreground"
-                )}
-              >
-                {status.label}
-              </Badge>
+            <Badge 
+              variant={status.color === 'success' ? 'default' : status.color}
+              className={cn(
+                "text-[10px] font-semibold px-2 py-0",
+                status.color === 'success' && "bg-success text-success-foreground"
+              )}
+            >
+              {status.label}
+            </Badge>
             )}
           </div>
         </div>
@@ -506,13 +506,13 @@ export function CategoryCard({
                 <div>
                   <span className="text-muted-foreground">{currency} {symbol} Потрачено: </span>
                   <span className="font-bold">
-                    {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
+                    {Math.round(currencyBudget.spent).toLocaleString('ru-RU')} {symbol}
                   </span>
                 </div>
                 <div>
                   <span className="text-muted-foreground">из </span>
                   <span className="font-semibold">
-                    {(currencyBudget.allocated - (currencyBudget.debt || 0)).toLocaleString('ru-RU')} {symbol}
+                    {Math.round(currencyBudget.allocated - (currencyBudget.debt || 0)).toLocaleString('ru-RU')} {symbol}
                   </span>
                 </div>
               </div>
@@ -607,15 +607,15 @@ export function CategoryCard({
                 />
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-muted-foreground">
-                    {currencyBudget.spent.toLocaleString('ru-RU')} {symbol}
+                    {Math.round(currencyBudget.spent).toLocaleString('ru-RU')} {symbol}
                   </span>
                   <span className="text-muted-foreground">
-                    из {currencyAvailableBudget.toLocaleString('ru-RU')} {symbol}
+                    из {Math.round(currencyAvailableBudget).toLocaleString('ru-RU')} {symbol}
                   </span>
                 </div>
                 {!hideBudgetDetails && currencyIsOverBudget && currencyOverBudget > 0 && (
                   <div className="text-[10px] text-destructive font-medium">
-                    Превышен на {currencyOverBudget.toLocaleString('ru-RU')} {symbol}
+                    Превышен на {Math.round(currencyOverBudget).toLocaleString('ru-RU')} {symbol}
                   </div>
                 )}
               </div>
@@ -624,26 +624,26 @@ export function CategoryCard({
         ) : (
           // Single currency - show one progress bar (backward compatibility)
           !hideBudgetDetails && (
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Использовано
-                </span>
-                <span className={cn(
-                  "text-xs font-bold",
-                  isOverBudget ? "text-destructive" : "text-foreground"
-                )}>
-                  {usedPercentage.toFixed(0)}%
-                </span>
-              </div>
-              <Progress 
-                value={Math.min(usedPercentage, 100)} 
-                className={cn(
-                  "h-2 rounded-full transition-all duration-500",
-                  isOverBudget && "bg-destructive/20"
-                )}
-              />
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                Использовано
+              </span>
+              <span className={cn(
+                "text-xs font-bold",
+                isOverBudget ? "text-destructive" : "text-foreground"
+              )}>
+                {usedPercentage.toFixed(0)}%
+              </span>
             </div>
+            <Progress 
+              value={Math.min(usedPercentage, 100)} 
+              className={cn(
+                "h-2 rounded-full transition-all duration-500",
+                isOverBudget && "bg-destructive/20"
+              )}
+            />
+          </div>
           )
         )}
       </div>
@@ -688,7 +688,7 @@ export function CategoryCard({
                 <span className="text-foreground flex-1 truncate font-medium">{source.name}</span>
                 <span className="font-semibold shrink-0 text-foreground">
                   {alloc.allocationType === 'amount' 
-                    ? `${alloc.allocationValue.toLocaleString('ru-RU')} ${symbol}`
+                    ? `${Math.round(alloc.allocationValue).toLocaleString('ru-RU')} ${symbol}`
                     : `${alloc.allocationValue}%`}
                 </span>
               </div>
@@ -910,7 +910,7 @@ function CategoryDetailsDialog({
                     {/* 1. Сумма выделена в этом месяце */}
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Сумма выделена в этом месяце:</span>
-                      <span className="text-sm font-bold">{currencyBaseBudget.toLocaleString('ru-RU')} {currencySymbol}</span>
+                      <span className="text-sm font-bold">{Math.round(currencyBaseBudget).toLocaleString('ru-RU')} {currencySymbol}</span>
                     </div>
                     
                     {/* 2. Долг или остаток */}
@@ -920,7 +920,7 @@ function CategoryDetailsDialog({
                           <div className="flex justify-between items-center p-2 bg-orange-500/10 rounded border border-orange-500/20">
                             <span className="text-xs text-muted-foreground">Долг с прошлого месяца:</span>
                             <span className="text-sm font-bold text-orange-600 dark:text-orange-400">
-                              −{(currencyBudget.debt || 0).toLocaleString('ru-RU')} {currencySymbol}
+                              −{Math.round(currencyBudget.debt || 0).toLocaleString('ru-RU')} {currencySymbol}
                             </span>
                           </div>
                         )}
@@ -928,7 +928,7 @@ function CategoryDetailsDialog({
                           <div className="flex justify-between items-center p-2 bg-blue-500/10 rounded border border-blue-500/20">
                             <span className="text-xs text-muted-foreground">Остаток с прошлого месяца:</span>
                             <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                              +{(currencyBudget.carryOver || 0).toLocaleString('ru-RU')} {currencySymbol}
+                              +{Math.round(currencyBudget.carryOver || 0).toLocaleString('ru-RU')} {currencySymbol}
                             </span>
                           </div>
                         )}
@@ -939,13 +939,13 @@ function CategoryDetailsDialog({
                     <div className="pt-2 border-t space-y-1.5 text-xs">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Базовый бюджет:</span>
-                        <span className="font-medium">{currencyBaseBudget.toLocaleString('ru-RU')} {currencySymbol}</span>
+                        <span className="font-medium">{Math.round(currencyBaseBudget).toLocaleString('ru-RU')} {currencySymbol}</span>
                       </div>
                       {currencyHasCarryOver && (
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">+ Перенос с прошлого месяца:</span>
                           <span className="font-medium text-blue-600 dark:text-blue-400">
-                            +{(currencyBudget.carryOver || 0).toLocaleString('ru-RU')} {currencySymbol}
+                            +{Math.round(currencyBudget.carryOver || 0).toLocaleString('ru-RU')} {currencySymbol}
                           </span>
                         </div>
                       )}
@@ -953,13 +953,13 @@ function CategoryDetailsDialog({
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">− Долг с прошлого месяца:</span>
                           <span className="font-medium text-orange-600 dark:text-orange-400">
-                            −{(currencyBudget.debt || 0).toLocaleString('ru-RU')} {currencySymbol}
+                            −{Math.round(currencyBudget.debt || 0).toLocaleString('ru-RU')} {currencySymbol}
                           </span>
                         </div>
                       )}
                       <div className="pt-1 border-t flex justify-between items-center">
                         <span className="font-semibold">Итого доступно:</span>
-                        <span className="text-sm font-bold">{currencyAvailableBudget.toLocaleString('ru-RU')} {currencySymbol}</span>
+                        <span className="text-sm font-bold">{Math.round(currencyAvailableBudget).toLocaleString('ru-RU')} {currencySymbol}</span>
                       </div>
                     </div>
                     
@@ -967,20 +967,20 @@ function CategoryDetailsDialog({
                     <div className="pt-2 border-t space-y-1.5">
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-muted-foreground">Потрачено в этом месяце:</span>
-                        <span className="text-sm font-bold">{currencyBudget.spent.toLocaleString('ru-RU')} {currencySymbol}</span>
+                        <span className="text-sm font-bold">{Math.round(currencyBudget.spent).toLocaleString('ru-RU')} {currencySymbol}</span>
                       </div>
                       {currencyBudget.spent < currencyAvailableBudget ? (
                         <div className="flex justify-between items-center p-2 bg-green-500/10 rounded border border-green-500/20">
                           <span className="text-xs text-muted-foreground">Осталось:</span>
                           <span className="text-sm font-bold text-green-600 dark:text-green-400">
-                            {(currencyAvailableBudget - currencyBudget.spent).toLocaleString('ru-RU')} {currencySymbol}
+                            {Math.round(currencyAvailableBudget - currencyBudget.spent).toLocaleString('ru-RU')} {currencySymbol}
                           </span>
                         </div>
                       ) : (
                         <div className="flex justify-between items-center p-2 bg-red-500/10 rounded border border-red-500/20">
                           <span className="text-xs text-muted-foreground">Превышено на:</span>
                           <span className="text-sm font-bold text-red-600 dark:text-red-400">
-                            {(currencyBudget.spent - currencyAvailableBudget).toLocaleString('ru-RU')} {currencySymbol}
+                            {Math.round(currencyBudget.spent - currencyAvailableBudget).toLocaleString('ru-RU')} {currencySymbol}
                           </span>
                         </div>
                       )}

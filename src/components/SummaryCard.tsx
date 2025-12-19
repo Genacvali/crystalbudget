@@ -88,7 +88,7 @@ export function SummaryCard({
                     const symbol = currencySymbols[currency] || currency;
                     return (
                       <p key={currency} className={cn("text-2xl font-bold break-words tracking-tight", textClasses[variant])}>
-                        {amount.toLocaleString('ru-RU')} <span className="text-lg">{symbol}</span>
+                        {Math.round(amount).toLocaleString('ru-RU')} <span className="text-lg">{symbol}</span>
                       </p>
                     );
                   })}

@@ -1003,7 +1003,7 @@ const Dashboard = () => {
     
     let skippedIncomes = 0;
     let skippedExpenses = 0;
-    
+
     incomes.forEach(inc => {
       const currency = inc.currency || userCurrency || 'RUB';
       const amount = Number(inc.amount);

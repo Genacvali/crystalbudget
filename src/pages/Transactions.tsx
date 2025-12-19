@@ -64,7 +64,7 @@ const Transactions = () => {
   const { formatAmount, currency: userCurrency } = useCurrency();
   const { createNotification } = useNotifications();
 
-  // Format amount with currency symbol
+  // Format amount with currency symbol (без копеек)
   const formatAmountWithCurrency = (amount: number, currency?: string) => {
     const currencySymbols: Record<string, string> = {
       RUB: '₽', USD: '$', EUR: '€', GBP: '£',
@@ -72,7 +72,7 @@ const Transactions = () => {
     };
     const curr = currency || userCurrency || 'RUB';
     const symbol = currencySymbols[curr] || curr;
-    return `${amount.toLocaleString('ru-RU')} ${symbol}`;
+    return `${Math.round(amount).toLocaleString('ru-RU')} ${symbol}`;
   };
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
