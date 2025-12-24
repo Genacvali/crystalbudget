@@ -561,11 +561,13 @@ const Transactions = () => {
                     <SelectItem value="incomes-header" disabled className="font-semibold">
                       Источники дохода
                     </SelectItem>
-                    {incomeSources.map((source) => (
-                      <SelectItem key={source.id} value={source.id}>
-                        💰 {source.name}
-                      </SelectItem>
-                    ))}
+                    {incomeSources
+                      .filter(source => source.name !== "Корректировка баланса")
+                      .map((source) => (
+                        <SelectItem key={source.id} value={source.id}>
+                          💰 {source.name}
+                        </SelectItem>
+                      ))}
                   </>
                 )}
               </SelectContent>

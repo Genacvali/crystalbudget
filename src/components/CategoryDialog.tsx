@@ -337,11 +337,13 @@ export function CategoryDialog({
                     <SelectValue placeholder="Выберите источник" />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
-                    {incomeSources.map(source => (
-                      <SelectItem key={source.id} value={source.id}>
-                        {source.name}
-                      </SelectItem>
-                    ))}
+                    {incomeSources
+                      .filter(source => source.name !== "Корректировка баланса")
+                      .map(source => (
+                        <SelectItem key={source.id} value={source.id}>
+                          {source.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
 

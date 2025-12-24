@@ -1338,10 +1338,12 @@ const Dashboard = () => {
             </div>
             {incomeSources.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-2.5">
-                {incomeSources.map(source => {
-                  const summary = sourceSummaries.find(s => s.sourceId === source.id);
-                  return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
-                })}
+                {incomeSources
+                  .filter(source => source.name !== "Корректировка баланса")
+                  .map(source => {
+                    const summary = sourceSummaries.find(s => s.sourceId === source.id);
+                    return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
+                  })}
               </div>
             ) : (
               <EmptyState
@@ -1507,10 +1509,12 @@ const Dashboard = () => {
 
           </div>
           {incomeSources.length > 0 ? <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-            {incomeSources.map(source => {
-              const summary = sourceSummaries.find(s => s.sourceId === source.id);
-              return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
-            })}
+            {incomeSources
+              .filter(source => source.name !== "Корректировка баланса")
+              .map(source => {
+                const summary = sourceSummaries.find(s => s.sourceId === source.id);
+                return summary ? <IncomeSourceCard key={source.id} source={source} summary={summary} /> : null;
+              })}
           </div> : <p className="text-sm text-muted-foreground">Нет источников дохода</p>}
         </TabsContent>
 
