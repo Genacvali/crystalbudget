@@ -37,36 +37,33 @@ export function CategoryCard({
   // budget.allocated уже включает carryOver (базовый бюджет + перенос)
   // Доступный бюджет = allocated - debt (долг уменьшает доступные средства)
   const availableBudget = budget.allocated - (budget.debt || 0);
-  // Процент должен считаться от базового бюджета (allocated), а не от доступного
-  // Потому что долг - это уже прошлое превышение, а процент показывает текущее использование
-  const baseBudget = budget.allocated;
-  const usedPercentage = baseBudget > 0 ? (budget.spent / baseBudget) * 100 : 0;
-  // Превышение определяется от базового бюджета, а не от доступного
-  // Долг учитывается отдельно в расчете доступного бюджета
-  const isOverBudget = budget.spent > baseBudget;
+  
+  // ПРАВИЛЬНАЯ ЛОГИКА:
+  // Процент и превышение должны считаться от ДОСТУПНОГО бюджета (с учетом долга)
+  // Потому что долг уменьшает доступные для трат средства
+  const usedPercentage = availableBudget > 0 ? (budget.spent / availableBudget) * 100 : 0;
+  const isOverBudget = budget.spent > availableBudget;
   const remaining = availableBudget - budget.spent;
   
-  // Debug logging для категории "ЗП Гены"
-  if (category.name === "ЗП Гены") {
-    console.log(`[DEBUG ЗП Гены] Детальный расчет:`, {
+  // Debug logging для категорий
+  if (category.name === "Бытовое") {
+    console.log(`[CategoryCard ${category.name}] Детальный расчет:`, {
       categoryName: category.name,
       allocated: budget.allocated,
       carryOver: budget.carryOver,
       debt: budget.debt,
       spent: budget.spent,
-      baseBudget: budget.allocated - (budget.carryOver || 0),
       availableBudget,
       usedPercentage: usedPercentage.toFixed(2),
-      budgetsByCurrency: budget.budgetsByCurrency
+      isOverBudget,
+      remaining
     });
   }
   
-  // Определяем статус и цвет
-  // Статус определяется по проценту от базового бюджета, а не по доступному
-  // Потому что долг - это прошлое превышение, а статус показывает текущее состояние
+  // Определяем статус и цвет на основе ДОСТУПНОГО бюджета
   const getStatus = () => {
-    // Если потрачено больше базового бюджета - превышен
-    if (budget.spent > baseBudget) return { label: 'Превышен', color: 'destructive' as const };
+    // Если потрачено больше доступного бюджета - превышен
+    if (isOverBudget) return { label: 'Превышен', color: 'destructive' as const };
     if (usedPercentage > 90) return { label: 'Критично', color: 'warning' as const };
     if (usedPercentage > 70) return { label: 'Внимание', color: 'warning' as const };
     if (usedPercentage > 50) return { label: 'Норма', color: 'default' as const };

@@ -290,7 +290,6 @@ const Dashboard = () => {
       
       // Debug: Log loaded incomes
       console.log('[DEBUG LoadData] Загружено доходов:', (incomesData || []).length);
-      console.log('[DEBUG LoadData] Диапазон дат:', startOfMonth, 'до', endOfMonth);
       console.log('[DEBUG LoadData] Пользователи:', familyUserIds);
       if ((incomesData || []).length > 0) {
         const totalIncome = (incomesData || []).reduce((sum, inc) => sum + Number(inc.amount || 0), 0);
@@ -913,7 +912,29 @@ const Dashboard = () => {
             const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
             const expectedSourceAmount = incomeSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
             const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
-            allocated += base * alloc.allocationValue / 100;
+            const allocatedFromSource = base * alloc.allocationValue / 100;
+            
+            // Debug для категории "Бытовое"
+            if (category.name === "Бытовое") {
+              const sourceName = incomeSources.find(s => s.id === alloc.incomeSourceId)?.name || 'Unknown';
+              console.log(`[Бытовое] Источник: ${sourceName}, Валюта: ${currency}`);
+              console.log(`[Бытовое] - ID источника: ${alloc.incomeSourceId}`);
+              console.log(`[Бытовое] - Доходы от источника за месяц:`, sourceIncomes.map(inc => ({ 
+                id: inc.id,
+                amount: inc.amount, 
+                date: inc.date,
+                source_id: inc.source_id,
+                currency: (inc as any).currency || 'RUB'
+              })));
+              console.log(`[Бытовое] - Общее кол-во доходов в системе: ${incomes.length}`);
+              console.log(`[Бытовое] - actualSourceTotal: ${actualSourceTotal}`);
+              console.log(`[Бытовое] - expectedSourceAmount: ${expectedSourceAmount}`);
+              console.log(`[Бытовое] - base (используется): ${base}`);
+              console.log(`[Бытовое] - процент: ${alloc.allocationValue}%`);
+              console.log(`[Бытовое] - выделено из этого источника: ${allocatedFromSource}`);
+            }
+            
+            allocated += allocatedFromSource;
           }
         });
 
@@ -938,9 +959,26 @@ const Dashboard = () => {
         const carryOver = (categoryCarryOvers[category.id] || {})[currency] || 0;
         const totalAllocated = allocated + carryOver;
 
-        // Debug для категории "ЗП Гены"
-        if (category.name === "ЗП Гены" && currency === 'RUB') {
-          const availableBudget = totalAllocated - debt;
+        // Debug для категории "Бытовое"
+        if (category.name === "Бытовое" && currency === 'RUB') {
+          const categoryExpensesList = expenses.filter(exp => exp.category_id === category.id);
+          console.log(`[Бытовое ИТОГО] Валюта: ${currency}`);
+          console.log(`[Бытовое ИТОГО] - ID категории: ${category.id}`);
+          console.log(`[Бытовое ИТОГО] - Расходы категории:`, categoryExpensesList.map(exp => ({
+            id: exp.id,
+            amount: exp.amount,
+            date: exp.date,
+            description: exp.description,
+            currency: (exp as any).currency || 'RUB'
+          })));
+          console.log(`[Бытовое ИТОГО] - Выделенный бюджет (без переноса): ${allocated}`);
+          console.log(`[Бытовое ИТОГО] - Перенос с прошлого месяца: ${carryOver}`);
+          console.log(`[Бытовое ИТОГО] - Долг: ${debt}`);
+          console.log(`[Бытовое ИТОГО] - Итоговый бюджет: ${totalAllocated}`);
+          console.log(`[Бытовое ИТОГО] - Потрачено: ${spent}`);
+          console.log(`[Бытовое ИТОГО] - Остаток (бюджет - траты - долг): ${totalAllocated - spent - debt}`);
+          console.log(`[Бытовое ИТОГО] - Доступно (бюджет - долг): ${totalAllocated - debt}`);
+          console.log(`[Бытовое ИТОГО] - Процент использования: ${spent > 0 && totalAllocated > 0 ? ((spent / totalAllocated) * 100).toFixed(2) : 0}%`);
         }
 
         budgetsByCurrency[currency] = {
