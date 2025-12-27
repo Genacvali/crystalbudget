@@ -1,4 +1,4 @@
-import { TrendingUp, Pencil, Trash2, AlertCircle } from "lucide-react";
+import { TrendingUp, Pencil, Trash2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,19 +20,19 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
     ? (summary.totalSpent / summary.totalIncome) * 100
     : 0;
 
-  const hasDebt = summary.debt > 0;
+  // Остаток = доход минус потраченное
+  const balance = summary.totalIncome - summary.totalSpent;
+  const isOverSpent = balance < 0; // Потрачено больше чем получено
   
-  // Определяем статус и цвет прогресс-бара как в CategoryCard
+  // Определяем статус на основе остатка
   const getProgressStatus = () => {
-    if (spentPercentage > 100) return { label: 'Превышен', color: 'destructive' as const };
-    if (spentPercentage > 90) return { label: 'Критично', color: 'warning' as const };
-    if (spentPercentage > 70) return { label: 'Внимание', color: 'warning' as const };
-    if (spentPercentage > 50) return { label: 'Норма', color: 'default' as const };
+    if (isOverSpent) return { label: 'Перерасход', color: 'destructive' as const };
+    if (spentPercentage > 90) return { label: 'Внимание', color: 'warning' as const };
+    if (spentPercentage > 70) return { label: 'Активно', color: 'default' as const };
     return { label: 'Отлично', color: 'success' as const };
   };
 
   const progressStatus = getProgressStatus();
-  const isOverSpent = spentPercentage > 100;
 
   return (
     <div className={cn(
@@ -98,8 +98,8 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                   const currencySpentPercentage = currencySummary.totalIncome > 0
                     ? (currencySummary.totalSpent / currencySummary.totalIncome) * 100
                     : 0;
-                  const currencyIsOverSpent = currencySpentPercentage > 100;
-                  const currencyHasDebt = currencySummary.debt > 0;
+                  const currencyBalance = currencySummary.totalIncome - currencySummary.totalSpent;
+                  const currencyIsOverSpent = currencyBalance < 0;
                   
                   const currencySymbols: Record<string, string> = {
                     RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -144,29 +144,18 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                         )}
                       />
                       
-                      {currencyIsOverSpent && (
-                        <div className="flex items-center gap-1 p-1 bg-destructive/10 rounded">
-                          <AlertCircle className="h-2.5 w-2.5 text-destructive shrink-0" />
-                          <p className="text-[9px] font-medium text-destructive">
-                            +{Math.round(Math.abs(currencySummary.totalSpent - currencySummary.totalIncome)).toLocaleString('ru-RU')} {symbol}
-                          </p>
-                        </div>
-                      )}
-                      
                       <div className="flex items-center justify-between">
                         <span className={cn(
                           "text-[9px] font-medium",
-                          currencyHasDebt ? "text-destructive" : "text-success"
+                          currencyIsOverSpent ? "text-destructive" : "text-success"
                         )}>
-                          {currencyHasDebt ? "Долг после распределения" : "Остаток после распределения"}
+                          {currencyIsOverSpent ? "Потрачено больше" : "Остаток"}
                         </span>
                         <span className={cn(
                           "text-xs font-bold break-words",
-                          currencyHasDebt ? "text-destructive" : "text-success"
+                          currencyIsOverSpent ? "text-destructive" : "text-success"
                         )}>
-                          {currencyHasDebt
-                            ? Math.round(currencySummary.debt).toLocaleString('ru-RU')
-                            : Math.round(currencySummary.remaining).toLocaleString('ru-RU')} {symbol}
+                          {Math.round(Math.abs(currencyBalance)).toLocaleString('ru-RU')} {symbol}
                         </span>
                       </div>
                     </div>
@@ -227,33 +216,8 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                     )}
                   />
                 </div>
-                
-                {/* Показываем превышение если есть */}
-                {isOverSpent && (() => {
-                  const currency = summary.summariesByCurrency 
-                    ? Object.keys(summary.summariesByCurrency)[0]
-                    : null;
-                  const currencySymbols: Record<string, string> = {
-                    RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
-                    JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
-                  };
-                  const symbol = currency ? (currencySymbols[currency] || currency) : null;
-                  const overAmount = summary.totalSpent - summary.totalIncome;
-                  
-                  return (
-                    <div className="flex items-center gap-2 p-2 bg-destructive/15 rounded border border-destructive/30">
-                      <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-destructive">
-                          Превышен на {currency && symbol
-                            ? `${Math.round(overAmount).toLocaleString('ru-RU')} ${symbol}`
-                            : formatAmount(Math.round(overAmount))}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
 
+                {/* Показываем только остаток/перерасход, без дублирования */}
                 <div className="pt-2 border-t">
                   {(() => {
                     const currency = summary.summariesByCurrency 
@@ -269,26 +233,22 @@ export function IncomeSourceCard({ source, summary, onEdit, onDelete, compact = 
                       <div className="flex items-center justify-between">
                         <span className={cn(
                           "text-xs font-medium",
-                          hasDebt ? "text-destructive" : "text-success"
+                          isOverSpent ? "text-destructive" : "text-success"
                         )}>
-                          {hasDebt ? "Долг после распределения" : "Остаток после распределения"}
+                          {isOverSpent ? "Перерасход" : "Остаток"}
                         </span>
                         <div className="flex items-center gap-1">
                           <TrendingUp className={cn(
                             "h-3 w-3 flex-shrink-0",
-                            hasDebt ? "text-destructive rotate-180" : "text-success"
+                            isOverSpent ? "text-destructive rotate-180" : "text-success"
                           )} />
                           <span className={cn(
                             "text-base font-bold break-words",
-                            hasDebt ? "text-destructive" : "text-success"
+                            isOverSpent ? "text-destructive" : "text-success"
                           )}>
-                            {hasDebt
-                              ? (currency && symbol
-                                  ? `${Math.round(summary.debt).toLocaleString('ru-RU')} ${symbol}`
-                                  : formatAmount(Math.round(summary.debt)))
-                              : (currency && symbol
-                                  ? `${Math.round(summary.remaining).toLocaleString('ru-RU')} ${symbol}`
-                                  : formatAmount(Math.round(summary.remaining)))}
+                            {currency && symbol
+                              ? `${Math.round(Math.abs(balance)).toLocaleString('ru-RU')} ${symbol}`
+                              : formatAmount(Math.round(Math.abs(balance)))}
                           </span>
                         </div>
                       </div>

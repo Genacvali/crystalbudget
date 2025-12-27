@@ -209,7 +209,7 @@ const Transactions = () => {
         description: income.description,
         sourceId: income.source_id,
         userName: profilesMap[income.user_id] || "Вы",
-        currency: (income as any).currency, // Add currency field
+        currency: income.currency, // Add currency field
       };
     });
 
@@ -224,7 +224,7 @@ const Transactions = () => {
         description: expense.description,
         categoryId: expense.category_id,
         userName: profilesMap[expense.user_id] || "Вы",
-        currency: (expense as any).currency, // Add currency field
+        currency: expense.currency, // Add currency field
       };
     });
 
@@ -290,13 +290,14 @@ const Transactions = () => {
     }
   };
 
-  const handleAddExpense = async (expense: { categoryId: string; amount: number; date: string; description?: string; currency?: string }) => {
+  const handleAddExpense = async (expense: { categoryId: string; amount: number; date: string; description?: string; currency?: string; sourceId?: string }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
     if (editingExpense) {
       const { error } = await supabase.from("expenses").update({
         category_id: expense.categoryId,
+        source_id: expense.sourceId || null,
         amount: expense.amount,
         date: expense.date,
         description: expense.description,
@@ -314,6 +315,7 @@ const Transactions = () => {
       const { error } = await supabase.from("expenses").insert({
         user_id: user.id,
         category_id: expense.categoryId,
+        source_id: expense.sourceId || null,
         amount: expense.amount,
         date: expense.date,
         description: expense.description,
@@ -564,10 +566,10 @@ const Transactions = () => {
                     {incomeSources
                       .filter(source => source.name !== "Корректировка баланса")
                       .map((source) => (
-                        <SelectItem key={source.id} value={source.id}>
-                          💰 {source.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem key={source.id} value={source.id}>
+                        💰 {source.name}
+                      </SelectItem>
+                    ))}
                   </>
                 )}
               </SelectContent>
@@ -954,6 +956,7 @@ const Transactions = () => {
           if (!open) setEditingExpense(null);
         }}
         categories={categories}
+        incomeSources={incomeSources}
         onSave={handleAddExpense}
         editingExpense={editingExpense}
       />

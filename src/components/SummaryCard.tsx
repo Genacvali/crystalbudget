@@ -2,11 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
-
-const currencySymbols: Record<string, string> = {
-  RUB: '₽', USD: '$', EUR: '€', GBP: '£',
-  JPY: '¥', CNY: '¥', KRW: '₩', GEL: '₾', AMD: '֏'
-};
+import { CURRENCY_SYMBOLS } from "@/constants";
 
 interface SummaryCardProps {
   title: string;
@@ -85,7 +81,7 @@ export function SummaryCard({
                 // Multiple currencies - show separate values
                 <div className="space-y-1">
                   {Object.entries(valuesByCurrency).map(([currency, amount]) => {
-                    const symbol = currencySymbols[currency] || currency;
+                    const symbol = CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] || currency;
                     return (
                       <p key={currency} className={cn("text-2xl font-bold break-words tracking-tight", textClasses[variant])}>
                         {Math.round(amount).toLocaleString('ru-RU')} <span className="text-lg">{symbol}</span>

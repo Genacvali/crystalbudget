@@ -25,6 +25,9 @@ import { useCurrency } from "@/hooks/useCurrency";
 import { IncomeSource, Category, CategoryAllocation, Income, Expense, SourceSummary, CategoryBudget } from "@/types/budget";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { CURRENCY_SYMBOLS } from "@/constants";
 const Dashboard = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const saved = localStorage.getItem('selectedDate');
@@ -49,6 +52,9 @@ const Dashboard = () => {
     currency: userCurrency
   } = useCurrency();
   const { createNotification } = useNotifications();
+  
+  // Автоматическая синхронизация offline транзакций
+  useOfflineSync();
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
@@ -215,8 +221,7 @@ const Dashboard = () => {
       const previousTotalExpenses = prevExpenseByCurrency[primaryCurrency] || 0;
       const calculatedCarryOver = previousTotalIncome - previousTotalExpenses;
       
-      // Debug: Log carry-over calculation
-      console.log('[DEBUG LoadData] Перенос баланса:', {
+      logger.debug('LoadData - Перенос баланса:', {
         previousTotalIncome: previousTotalIncome.toFixed(2),
         previousTotalExpenses: previousTotalExpenses.toFixed(2),
         calculatedCarryOver: calculatedCarryOver.toFixed(2),
@@ -260,7 +265,7 @@ const Dashboard = () => {
       if (allocationsError) throw allocationsError;
       const mappedCategories: Category[] = (categoriesData || []).map(item => {
         const categoryAllocations = (allocationsData || []).filter(alloc => alloc.category_id === item.id).map(alloc => {
-          const currency = (alloc as any).currency || 'RUB';
+          const currency = alloc.currency || 'RUB';
           return {
             id: alloc.id,
             incomeSourceId: alloc.income_source_id,
@@ -288,23 +293,22 @@ const Dashboard = () => {
       } = await supabase.from('incomes').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
       if (incomesError) throw incomesError;
       
-      // Debug: Log loaded incomes
-      console.log('[DEBUG LoadData] Загружено доходов:', (incomesData || []).length);
-      console.log('[DEBUG LoadData] Пользователи:', familyUserIds);
+      logger.debug('LoadData - Загружено доходов:', (incomesData || []).length);
+      logger.debug('LoadData - Пользователи:', familyUserIds);
       if ((incomesData || []).length > 0) {
         const totalIncome = (incomesData || []).reduce((sum, inc) => sum + Number(inc.amount || 0), 0);
-        console.log('[DEBUG LoadData] Сумма доходов:', totalIncome);
+        logger.debug('LoadData - Сумма доходов:', totalIncome);
         
         // Check for incomes with null or zero amounts
         const incomesWithNullAmount = (incomesData || []).filter(inc => !inc.amount || Number(inc.amount) === 0);
         if (incomesWithNullAmount.length > 0) {
-          console.log('[DEBUG LoadData] Доходов с нулевой суммой:', incomesWithNullAmount.length);
+          logger.warn('LoadData - Доходов с нулевой суммой:', incomesWithNullAmount.length);
         }
         
         // Check for incomes with negative amounts
         const incomesWithNegativeAmount = (incomesData || []).filter(inc => Number(inc.amount) < 0);
         if (incomesWithNegativeAmount.length > 0) {
-          console.log('[DEBUG LoadData] Доходов с отрицательной суммой:', incomesWithNegativeAmount.length);
+          logger.warn('LoadData - Доходов с отрицательной суммой:', incomesWithNegativeAmount.length);
         }
       }
       
@@ -317,29 +321,28 @@ const Dashboard = () => {
       } = await supabase.from('expenses').select('*').in('user_id', familyUserIds).gte('date', startOfMonth).lte('date', endOfMonth);
       if (expensesError) throw expensesError;
       
-      // Debug: Log loaded expenses
-      console.log('[DEBUG LoadData] Загружено расходов:', (expensesData || []).length);
+      logger.debug('LoadData - Загружено расходов:', (expensesData || []).length);
       if ((expensesData || []).length > 0) {
         const totalExpense = (expensesData || []).reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
-        console.log('[DEBUG LoadData] Сумма расходов:', totalExpense);
+        logger.debug('LoadData - Сумма расходов:', totalExpense);
         
         // Check for expenses with null or zero amounts
         const expensesWithNullAmount = (expensesData || []).filter(exp => !exp.amount || Number(exp.amount) === 0);
         if (expensesWithNullAmount.length > 0) {
-          console.log('[DEBUG LoadData] Расходов с нулевой суммой:', expensesWithNullAmount.length);
+          logger.warn('LoadData - Расходов с нулевой суммой:', expensesWithNullAmount.length);
         }
         
         // Check for expenses with negative amounts
         const expensesWithNegativeAmount = (expensesData || []).filter(exp => Number(exp.amount) < 0);
         if (expensesWithNegativeAmount.length > 0) {
-          console.log('[DEBUG LoadData] Расходов с отрицательной суммой:', expensesWithNegativeAmount.length);
+          logger.warn('LoadData - Расходов с отрицательной суммой:', expensesWithNegativeAmount.length);
         }
         
         const expensesWithoutCategory = (expensesData || []).filter(exp => !exp.category_id);
         if (expensesWithoutCategory.length > 0) {
-          console.log('[DEBUG LoadData] Расходов без категории (корректировки):', expensesWithoutCategory.length);
+          logger.debug('LoadData - Расходов без категории (корректировки):', expensesWithoutCategory.length);
           const totalAdjustments = expensesWithoutCategory.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
-          console.log('[DEBUG LoadData] Сумма корректировок:', totalAdjustments);
+          logger.debug('LoadData - Сумма корректировок:', totalAdjustments);
         }
         
         // Check date range issues
@@ -348,14 +351,14 @@ const Dashboard = () => {
           return expDate < new Date(startOfMonth) || expDate > new Date(endOfMonth);
         });
         if (expensesOutsideRange.length > 0) {
-          console.warn('[DEBUG LoadData] Расходов вне диапазона дат:', expensesOutsideRange.length);
+          logger.warn('LoadData - Расходов вне диапазона дат:', expensesOutsideRange.length);
         }
       }
       
       setExpenses(expensesData || []);
 
       // Check if ZenMoney is connected  
-      const { data: zenmoneyConnection } = await (supabase as any)
+      const { data: zenmoneyConnection } = await supabase
         .from('zenmoney_connections')
         .select('id')
         .eq('user_id', user!.id)
@@ -368,10 +371,10 @@ const Dashboard = () => {
       const {
         data: zenmoneyAccountsData,
         error: zenmoneyAccountsError
-      } = await (supabase as any)
+      } = await supabase
         .from('zenmoney_accounts')
         .select('*')
-        .or(familyUserIds.map(id => `user_id.eq.${id}`).join(','))
+        .in('user_id', familyUserIds)
         .eq('archive', false);
 
       if (!zenmoneyAccountsError && zenmoneyAccountsData) {
@@ -425,10 +428,10 @@ const Dashboard = () => {
           const pollInterval = setInterval(async () => {
             attempts++;
 
-            const { data: newAccounts } = await (supabase as any)
+            const { data: newAccounts } = await supabase
               .from('zenmoney_accounts')
               .select('*')
-              .or(familyUserIds.map(id => `user_id.eq.${id}`).join(','))
+              .in('user_id', familyUserIds)
               .eq('archive', false);
 
             if (newAccounts && newAccounts.length > 0) {
@@ -472,7 +475,7 @@ const Dashboard = () => {
         const expensesByCurrency: Record<string, number> = {};
         const categoryExpenses = (previousExpensesData || []).filter(exp => exp.category_id === category.id);
         categoryExpenses.forEach(exp => {
-          const expCurrency = (exp as any).currency || userCurrency || 'RUB';
+          const expCurrency = exp.currency || userCurrency || 'RUB';
           expensesByCurrency[expCurrency] = (expensesByCurrency[expCurrency] || 0) + Number(exp.amount);
         });
 
@@ -509,7 +512,7 @@ const Dashboard = () => {
               } else if (alloc.allocationType === 'percent') {
                 const sourceIncomes = (previousIncomesData || []).filter(inc => 
                   inc.source_id === alloc.incomeSourceId &&
-                  ((inc as any).currency || userCurrency || 'RUB') === currency
+                  (inc.currency || userCurrency || 'RUB') === currency
                 );
                 const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
                 const expectedSourceAmount = mappedSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
@@ -524,7 +527,7 @@ const Dashboard = () => {
             } else if (category.linkedSourceId && category.allocationPercent) {
               const sourceIncomes = (previousIncomesData || []).filter(inc => 
                 inc.source_id === category.linkedSourceId &&
-                ((inc as any).currency || userCurrency || 'RUB') === currency
+                (inc.currency || userCurrency || 'RUB') === currency
               );
               const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
               const expectedSourceAmount = mappedSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
@@ -649,6 +652,7 @@ const Dashboard = () => {
     date: string;
     description?: string;
     currency?: string;
+    sourceId?: string;
   }) => {
     if (!user) return;
 
@@ -657,6 +661,7 @@ const Dashboard = () => {
       id: `temp-${Date.now()}`,
       user_id: user.id,
       category_id: expense.categoryId,
+      source_id: expense.sourceId || null,
       amount: expense.amount,
       date: expense.date,
       description: expense.description,
@@ -672,6 +677,7 @@ const Dashboard = () => {
         .insert({
           user_id: user.id,
           category_id: expense.categoryId,
+          source_id: expense.sourceId || null,
           amount: expense.amount,
           date: expense.date,
           description: expense.description,
@@ -753,12 +759,22 @@ const Dashboard = () => {
         }
       });
 
-      // Group expenses by currency (distributed proportionally)
+      // Group expenses by currency (with explicit source or distributed proportionally)
       const spentByCurrency: Record<string, number> = {};
+      
+      // First: Process expenses with explicit source_id
+      expenses
+        .filter(exp => exp.source_id === source.id)
+        .forEach(exp => {
+          const currency = exp.currency || userCurrency || 'RUB';
+          spentByCurrency[currency] = (spentByCurrency[currency] || 0) + Number(exp.amount);
+        });
+      
+      // Second: Distribute expenses without explicit source_id proportionally
       categories.forEach(category => {
         const categoryExpensesByCurrency: Record<string, number> = {};
         expenses
-          .filter(exp => exp.category_id === category.id)
+          .filter(exp => exp.category_id === category.id && !exp.source_id) // Only expenses without explicit source
           .forEach(exp => {
             const currency = exp.currency || userCurrency || 'RUB';
             categoryExpensesByCurrency[currency] = (categoryExpensesByCurrency[currency] || 0) + Number(exp.amount);
@@ -822,7 +838,8 @@ const Dashboard = () => {
         const totalIncome = incomesByCurrency[currency] || 0;
         const totalAllocated = allocationsByCurrency[currency] || 0;
         const totalSpent = spentByCurrency[currency] || 0;
-        const remaining = totalIncome - totalAllocated;
+        // Остаток = доходы минус потраченное в этом месяце (без учета распределений и переносов)
+        const remaining = totalIncome - totalSpent;
         const debt = remaining < 0 ? Math.abs(remaining) : 0;
 
         summariesByCurrency[currency] = {
@@ -865,7 +882,7 @@ const Dashboard = () => {
       const categoryExpenses = expenses.filter(exp => exp.category_id === category.id);
 
       categoryExpenses.forEach(exp => {
-        const expCurrency = (exp as any).currency || userCurrency || 'RUB';
+        const expCurrency = exp.currency || userCurrency || 'RUB';
         expensesByCurrency[expCurrency] = (expensesByCurrency[expCurrency] || 0) + Number(exp.amount);
       });
 
@@ -907,31 +924,20 @@ const Dashboard = () => {
             // Filter incomes by currency and source
             const sourceIncomes = incomes.filter(inc =>
               inc.source_id === alloc.incomeSourceId &&
-              ((inc as any).currency || userCurrency || 'RUB') === currency
+              (inc.currency || userCurrency || 'RUB') === currency
             );
             const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
             const expectedSourceAmount = incomeSources.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
             const base = actualSourceTotal > 0 ? actualSourceTotal : expectedSourceAmount;
             const allocatedFromSource = base * alloc.allocationValue / 100;
             
-            // Debug для категории "Бытовое"
+            // Debug для отслеживания расчетов (только в dev mode)
             if (category.name === "Бытовое") {
               const sourceName = incomeSources.find(s => s.id === alloc.incomeSourceId)?.name || 'Unknown';
-              console.log(`[Бытовое] Источник: ${sourceName}, Валюта: ${currency}`);
-              console.log(`[Бытовое] - ID источника: ${alloc.incomeSourceId}`);
-              console.log(`[Бытовое] - Доходы от источника за месяц:`, sourceIncomes.map(inc => ({ 
-                id: inc.id,
-                amount: inc.amount, 
-                date: inc.date,
-                source_id: inc.source_id,
-                currency: (inc as any).currency || 'RUB'
-              })));
-              console.log(`[Бытовое] - Общее кол-во доходов в системе: ${incomes.length}`);
-              console.log(`[Бытовое] - actualSourceTotal: ${actualSourceTotal}`);
-              console.log(`[Бытовое] - expectedSourceAmount: ${expectedSourceAmount}`);
-              console.log(`[Бытовое] - base (используется): ${base}`);
-              console.log(`[Бытовое] - процент: ${alloc.allocationValue}%`);
-              console.log(`[Бытовое] - выделено из этого источника: ${allocatedFromSource}`);
+              logger.debug(`${category.name} - Источник: ${sourceName}, Валюта: ${currency}`);
+              logger.debug(`${category.name} - Доходы от источника:`, sourceIncomes.length);
+              logger.debug(`${category.name} - actualSourceTotal: ${actualSourceTotal}, expectedSourceAmount: ${expectedSourceAmount}`);
+              logger.debug(`${category.name} - выделено: ${allocatedFromSource} (${alloc.allocationValue}% от ${base})`);
             }
             
             allocated += allocatedFromSource;
@@ -945,7 +951,7 @@ const Dashboard = () => {
           } else if (category.linkedSourceId && category.allocationPercent) {
             const sourceIncomes = incomes.filter(inc =>
               inc.source_id === category.linkedSourceId &&
-              ((inc as any).currency || userCurrency || 'RUB') === currency
+              (inc.currency || userCurrency || 'RUB') === currency
             );
             const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
             const expectedSourceAmount = incomeSources.find(s => s.id === category.linkedSourceId)?.amount || 0;
@@ -959,26 +965,9 @@ const Dashboard = () => {
         const carryOver = (categoryCarryOvers[category.id] || {})[currency] || 0;
         const totalAllocated = allocated + carryOver;
 
-        // Debug для категории "Бытовое"
+        // Debug для отслеживания расчетов (только в dev mode)
         if (category.name === "Бытовое" && currency === 'RUB') {
-          const categoryExpensesList = expenses.filter(exp => exp.category_id === category.id);
-          console.log(`[Бытовое ИТОГО] Валюта: ${currency}`);
-          console.log(`[Бытовое ИТОГО] - ID категории: ${category.id}`);
-          console.log(`[Бытовое ИТОГО] - Расходы категории:`, categoryExpensesList.map(exp => ({
-            id: exp.id,
-            amount: exp.amount,
-            date: exp.date,
-            description: exp.description,
-            currency: (exp as any).currency || 'RUB'
-          })));
-          console.log(`[Бытовое ИТОГО] - Выделенный бюджет (без переноса): ${allocated}`);
-          console.log(`[Бытовое ИТОГО] - Перенос с прошлого месяца: ${carryOver}`);
-          console.log(`[Бытовое ИТОГО] - Долг: ${debt}`);
-          console.log(`[Бытовое ИТОГО] - Итоговый бюджет: ${totalAllocated}`);
-          console.log(`[Бытовое ИТОГО] - Потрачено: ${spent}`);
-          console.log(`[Бытовое ИТОГО] - Остаток (бюджет - траты - долг): ${totalAllocated - spent - debt}`);
-          console.log(`[Бытовое ИТОГО] - Доступно (бюджет - долг): ${totalAllocated - debt}`);
-          console.log(`[Бытовое ИТОГО] - Процент использования: ${spent > 0 && totalAllocated > 0 ? ((spent / totalAllocated) * 100).toFixed(2) : 0}%`);
+          logger.debug(`${category.name} ИТОГО - Бюджет: ${totalAllocated}, Потрачено: ${spent}, Долг: ${debt}, Доступно: ${totalAllocated - debt}`);
         }
 
         budgetsByCurrency[currency] = {
@@ -1035,9 +1024,7 @@ const Dashboard = () => {
     const incomeByCurrency: Record<string, number> = {};
     const expenseByCurrency: Record<string, number> = {};
 
-    // Debug: Log all transactions
-    console.log('[DEBUG Balance] Всего доходов:', incomes.length);
-    console.log('[DEBUG Balance] Всего расходов:', expenses.length);
+    logger.debug('Balance - Всего доходов:', incomes.length, 'расходов:', expenses.length);
     
     let skippedIncomes = 0;
     let skippedExpenses = 0;
@@ -1049,15 +1036,15 @@ const Dashboard = () => {
       // Skip if amount is invalid
       if (isNaN(amount) || amount === null || amount === undefined) {
         skippedIncomes++;
-        console.warn('[DEBUG Balance] Пропущен доход (невалидная сумма):', { id: inc.id, amount: inc.amount, currency, date: inc.date, source_id: inc.source_id });
+        logger.warn('Balance - Пропущен доход (невалидная сумма):', inc.id);
         return;
       }
       
       incomeByCurrency[currency] = (incomeByCurrency[currency] || 0) + amount;
       
-      // Debug: Log suspicious transactions
+      // Log suspicious transactions
       if (amount <= 0) {
-        console.warn('[DEBUG Balance] Подозрительный доход (<= 0):', { id: inc.id, amount, currency, date: inc.date, source_id: inc.source_id });
+        logger.warn('Balance - Подозрительный доход (<= 0):', inc.id, amount);
       }
     });
 
@@ -1068,37 +1055,29 @@ const Dashboard = () => {
       // Skip if amount is invalid
       if (isNaN(amount) || amount === null || amount === undefined) {
         skippedExpenses++;
-        console.warn('[DEBUG Balance] Пропущен расход (невалидная сумма):', { id: exp.id, amount: exp.amount, currency, date: exp.date, category_id: exp.category_id });
+        logger.warn('Balance - Пропущен расход (невалидная сумма):', exp.id);
         return;
       }
       
       expenseByCurrency[currency] = (expenseByCurrency[currency] || 0) + amount;
       
-      // Debug: Log suspicious transactions
+      // Log suspicious transactions
       if (amount <= 0) {
-        console.warn('[DEBUG Balance] Подозрительный расход (<= 0):', { id: exp.id, amount, currency, date: exp.date, category_id: exp.category_id });
+        logger.warn('Balance - Подозрительный расход (<= 0):', exp.id, amount);
       }
       
-      // Debug: Log expenses without category (balance adjustments)
+      // Log expenses without category (balance adjustments)
       if (!exp.category_id) {
-        console.log('[DEBUG Balance] Расход без категории (корректировка):', { id: exp.id, amount, currency, date: exp.date, description: exp.description });
+        logger.debug('Balance - Расход без категории (корректировка):', exp.id);
       }
     });
     
     if (skippedIncomes > 0 || skippedExpenses > 0) {
-      console.warn('[DEBUG Balance] Пропущено транзакций:', { skippedIncomes, skippedExpenses });
+      logger.warn('Balance - Пропущено транзакций:', { skippedIncomes, skippedExpenses });
     }
     
-    // Debug: Log totals by currency
-    console.log('[DEBUG Balance] Доходы по валютам:', incomeByCurrency);
-    console.log('[DEBUG Balance] Расходы по валютам:', expenseByCurrency);
-    
-    // Debug: Calculate and log total sums for verification
-    const totalIncomeSum = Object.values(incomeByCurrency).reduce((sum, val) => sum + val, 0);
-    const totalExpenseSum = Object.values(expenseByCurrency).reduce((sum, val) => sum + val, 0);
-    console.log('[DEBUG Balance] Итоговая сумма доходов:', totalIncomeSum);
-    console.log('[DEBUG Balance] Итоговая сумма расходов:', totalExpenseSum);
-    console.log('[DEBUG Balance] Разница (доходы - расходы):', totalIncomeSum - totalExpenseSum);
+    logger.debug('Balance - Доходы по валютам:', incomeByCurrency);
+    logger.debug('Balance - Расходы по валютам:', expenseByCurrency);
 
     const allCurrencies = new Set([
       ...Object.keys(incomeByCurrency),
@@ -1125,15 +1104,9 @@ const Dashboard = () => {
 
       result[currency] = { income, expense, balance, totalBalance };
       
-      // Debug: Log balance calculation for primary currency
+      // Log balance calculation for primary currency (dev only)
       if (currency === primaryCurrency) {
-        console.log('[DEBUG Balance] Расчет баланса для', currency, ':', {
-          income,
-          expense,
-          balance: balance.toFixed(2),
-          carryOverBalance: (carryOverBalance || 0).toFixed(2),
-          totalBalance: totalBalance.toFixed(2)
-        });
+        logger.debug(`Balance - ${currency}: доходы ${income.toFixed(2)}, расходы ${expense.toFixed(2)}, итого ${totalBalance.toFixed(2)}`);
       }
     });
 
@@ -1229,14 +1202,12 @@ const Dashboard = () => {
 
   const sourceSummaries = useMemo(
     () => calculateSourceSummaries(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [incomeSources, incomes, expenses, categories]
+    [incomeSources, incomes, expenses, categories, userCurrency]
   );
 
   const categoryBudgets = useMemo(
     () => calculateCategoryBudgets(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [categories, incomes, expenses, incomeSources, categoryDebts, categoryCarryOvers]
+    [categories, incomes, expenses, incomeSources, categoryDebts, categoryCarryOvers, userCurrency]
   );
 
   const monthName = useMemo(
@@ -1741,7 +1712,7 @@ const Dashboard = () => {
 
     <IncomeDialog open={incomeDialogOpen} onOpenChange={setIncomeDialogOpen} incomeSources={incomeSources} onSave={handleAddIncome} onSourceCreated={loadData} />
 
-    <ExpenseDialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen} categories={categories} onSave={handleAddExpense} />
+    <ExpenseDialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen} categories={categories} incomeSources={incomeSources} onSave={handleAddExpense} />
 
     <AIChatDialog open={aiChatOpen} onOpenChange={setAiChatOpen} />
 

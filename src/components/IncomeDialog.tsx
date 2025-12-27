@@ -153,10 +153,10 @@ export function IncomeDialog({ open, onOpenChange, incomeSources, onSave, editin
                 {incomeSources
                   .filter(source => source.name !== "Корректировка баланса")
                   .map((source) => (
-                    <SelectItem key={source.id} value={source.id}>
-                      {source.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem key={source.id} value={source.id}>
+                    {source.name}
+                  </SelectItem>
+                ))}
                 <div className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground border-t mt-1"
                   onClick={(e) => {
                     e.stopPropagation();

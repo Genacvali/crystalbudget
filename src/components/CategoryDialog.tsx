@@ -340,10 +340,10 @@ export function CategoryDialog({
                     {incomeSources
                       .filter(source => source.name !== "Корректировка баланса")
                       .map(source => (
-                        <SelectItem key={source.id} value={source.id}>
-                          {source.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem key={source.id} value={source.id}>
+                        {source.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
 

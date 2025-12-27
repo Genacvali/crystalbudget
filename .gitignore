@@ -47,3 +47,11 @@ check_monthly_income.sql
 RENEW_SSL.md
 package.json
 package.json
+SUMMARY.md
+scripts/apply-migrations.sh
+PROJECT_AUDIT.md
+LOGIC_IMPROVEMENTS.md
+IMPROVEMENTS.md
+FIXES_APPLIED.md
+DEPLOYMENT.md
+CRITICAL_FIXES.md

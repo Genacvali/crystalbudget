@@ -38,6 +38,7 @@ export interface Income {
 export interface Expense {
   id: string;
   category_id: string | null; // Changed from categoryId to match DB schema
+  source_id?: string | null; // Optional income source for the expense
   amount: number;
   date: string;
   description?: string;

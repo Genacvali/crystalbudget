@@ -15,7 +15,7 @@ import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import type { Category, Expense } from "@/types/budget";
+import type { Category, Expense, IncomeSource } from "@/types/budget";
 import { handleNumericInput } from "@/lib/numberInput";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -24,20 +24,23 @@ const expenseSchema = z.object({
   amount: z.number().positive("Сумма должна быть положительной"),
   date: z.string().min(1, "Выберите дату"),
   description: z.string().optional(),
+  sourceId: z.string().optional(),
 });
 
 interface ExpenseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: Category[];
-  onSave: (expense: { categoryId: string; amount: number; date: string; description?: string; currency?: string }) => void;
+  incomeSources?: IncomeSource[];
+  onSave: (expense: { categoryId: string; amount: number; date: string; description?: string; currency?: string; sourceId?: string }) => void;
   editingExpense?: Expense | null;
 }
 
-export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingExpense }: ExpenseDialogProps) {
+export function ExpenseDialog({ open, onOpenChange, categories, incomeSources = [], onSave, editingExpense }: ExpenseDialogProps) {
   const { toast } = useToast();
   const { convertToRubles, convertFromRubles, currency: userCurrency } = useCurrency();
   const [categoryId, setCategoryId] = useState("");
+  const [sourceId, setSourceId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [description, setDescription] = useState("");
@@ -73,7 +76,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         // Get unique currencies from allocations
         const currencies = new Set<string>();
         (allocations || []).forEach(alloc => {
-          const currency = (alloc as any).currency;
+          const currency = alloc.currency;
           if (currency) {
             currencies.add(currency);
           }
@@ -103,6 +106,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
   useEffect(() => {
     if (open && editingExpense) {
       setCategoryId(editingExpense.category_id || "");
+      setSourceId(editingExpense.source_id || "");
       // Используем оригинальную сумму без конвертации (хранится в исходной валюте)
       setAmount(editingExpense.amount.toString());
       setDate(new Date(editingExpense.date));
@@ -110,6 +114,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
       setCurrency(editingExpense.currency || userCurrency || 'RUB');
     } else if (!open) {
       setCategoryId("");
+      setSourceId("");
       setAmount("");
       setDate(new Date());
       setDescription("");
@@ -126,6 +131,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         amount: parseFloat(amount),
         date: date?.toISOString(),
         description: description.trim() || undefined,
+        sourceId: sourceId || undefined,
       });
 
       // Сохраняем сумму в исходной валюте (без конвертации)
@@ -135,6 +141,7 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
         date: validated.date,
         description: validated.description,
         currency: currency,
+        sourceId: validated.sourceId,
       });
       onOpenChange(false);
     } catch (error) {
@@ -173,6 +180,31 @@ export function ExpenseDialog({ open, onOpenChange, categories, onSave, editingE
               </SelectContent>
             </Select>
           </div>
+          
+          {incomeSources.length > 0 && (
+            <div className="grid gap-2">
+              <Label htmlFor="source">Источник (необязательно)</Label>
+              <Select value={sourceId || "auto"} onValueChange={(val) => setSourceId(val === "auto" ? "" : val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Автоматическое распределение" />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  <SelectItem value="auto">Автоматическое распределение</SelectItem>
+                  {incomeSources
+                    .filter(source => source.name !== "Корректировка баланса")
+                    .map((source) => (
+                      <SelectItem key={source.id} value={source.id}>
+                        {source.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Если не выбран, расход будет распределен пропорционально между источниками
+              </p>
+            </div>
+          )}
+          
           <div className="grid gap-2">
             <Label htmlFor="amount">Сумма</Label>
             <div className="flex gap-2">

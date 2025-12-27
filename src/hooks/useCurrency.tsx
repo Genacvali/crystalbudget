@@ -1,18 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-
-const currencySymbols: Record<string, string> = {
-  RUB: "₽",
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  JPY: "¥",
-  CNY: "¥",
-  KRW: "₩",
-  GEL: "₾",
-  AMD: "֏",
-};
+import { CURRENCY_SYMBOLS } from "@/constants";
 
 export function useCurrency() {
   const { user } = useAuth();
@@ -125,7 +114,7 @@ export function useCurrency() {
   }, [user]);
 
   const formatAmount = (amount: number): string => {
-    const symbol = currencySymbols[currency] || "₽";
+    const symbol = CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] || "₽";
     return `${Math.round(amount).toLocaleString('ru-RU')} ${symbol}`;
   };
 

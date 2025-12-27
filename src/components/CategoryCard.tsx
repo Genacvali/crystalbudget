@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Category, CategoryBudget, IncomeSource } from "@/types/budget";
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/hooks/useCurrency";
+import { logger } from "@/lib/logger";
 import { useState } from "react";
 
 interface CategoryCardProps {
@@ -45,20 +46,8 @@ export function CategoryCard({
   const isOverBudget = budget.spent > availableBudget;
   const remaining = availableBudget - budget.spent;
   
-  // Debug logging для категорий
-  if (category.name === "Бытовое") {
-    console.log(`[CategoryCard ${category.name}] Детальный расчет:`, {
-      categoryName: category.name,
-      allocated: budget.allocated,
-      carryOver: budget.carryOver,
-      debt: budget.debt,
-      spent: budget.spent,
-      availableBudget,
-      usedPercentage: usedPercentage.toFixed(2),
-      isOverBudget,
-      remaining
-    });
-  }
+  // Debug logging для категорий (только в dev mode)
+  logger.debug(`CategoryCard ${category.name} - allocated: ${budget.allocated}, spent: ${budget.spent}, available: ${availableBudget}, used: ${usedPercentage.toFixed(1)}%`);
   
   // Определяем статус и цвет на основе ДОСТУПНОГО бюджета
   const getStatus = () => {
@@ -261,15 +250,58 @@ export function CategoryCard({
                   const hasDebt = (currencyBudget.debt || 0) > 0;
                   const hasAdjustments = hasCarryOver || hasDebt;
                   
+                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+                  const currencyRemaining = currencyAvailableBudget - currencyBudget.spent;
+                  
                   return (
                     <div key={currency} className="space-y-0.5">
-                      {/* Итого доступно */}
-                      <div className="text-[11px]">
-                        <span className="text-muted-foreground">Итого доступно: </span>
-                        <span className="font-bold">
-                          {Math.round(currencyAvailableBudget).toLocaleString('ru-RU')} {symbol}
-                        </span>
-                      </div>
+                      {/* Осталось / Долг / Превышено */}
+                      {(() => {
+                        // Если есть долг и бюджет отрицательный
+                        if (hasDebt && currencyAvailableBudget < 0) {
+                          if (currencyBudget.spent === 0) {
+                            return (
+                              <div className="text-[11px]">
+                                <span className="text-muted-foreground">Долг: </span>
+                                <span className="font-bold text-orange-600 dark:text-orange-400">
+                                  {Math.round(Math.abs(currencyAvailableBudget)).toLocaleString('ru-RU')} {symbol}
+                                </span>
+                              </div>
+                            );
+                          } else {
+                            const totalOwed = Math.abs(currencyAvailableBudget) + currencyBudget.spent;
+                            return (
+                              <div className="text-[11px]">
+                                <span className="text-muted-foreground">Задолженность: </span>
+                                <span className="font-bold text-destructive">
+                                  {Math.round(totalOwed).toLocaleString('ru-RU')} {symbol}
+                                </span>
+                              </div>
+                            );
+                          }
+                        }
+                        
+                        // Обычная логика
+                        if (!currencyIsOverBudget) {
+                          return (
+                            <div className="text-[11px]">
+                              <span className="text-muted-foreground">Осталось: </span>
+                              <span className="font-bold text-success">
+                                {Math.round(Math.max(0, currencyRemaining)).toLocaleString('ru-RU')} {symbol}
+                              </span>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="text-[11px]">
+                              <span className="text-muted-foreground">Превышено на: </span>
+                              <span className="font-bold text-destructive">
+                                {Math.round(Math.abs(currencyRemaining)).toLocaleString('ru-RU')} {symbol}
+                              </span>
+                            </div>
+                          );
+                        }
+                      })()}
                       
                     </div>
                   );
@@ -278,11 +310,51 @@ export function CategoryCard({
             ) : (
               // Single currency - simple and clear
               <div className="space-y-0.5">
-                {/* Итого доступно */}
-                <div className="text-xs">
-                  <span className="text-muted-foreground">Итого доступно: </span>
-                  <span className="font-bold">{formatAmount(availableBudget)}</span>
-                </div>
+                {/* Осталось / Долг / Превышено */}
+                {(() => {
+                  const hasDebt = (budget.debt || 0) > 0;
+                  
+                  // Если есть долг и бюджет отрицательный
+                  if (hasDebt && availableBudget < 0) {
+                    if (budget.spent === 0) {
+                      return (
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">Долг: </span>
+                          <span className="font-bold text-orange-600 dark:text-orange-400">
+                            {formatAmount(Math.abs(availableBudget))}
+                          </span>
+                        </div>
+                      );
+                    } else {
+                      const totalOwed = Math.abs(availableBudget) + budget.spent;
+                      return (
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">Задолженность: </span>
+                          <span className="font-bold text-destructive">
+                            {formatAmount(totalOwed)}
+                          </span>
+                        </div>
+                      );
+                    }
+                  }
+                  
+                  // Обычная логика
+                  if (!isOverBudget) {
+                    return (
+                      <div className="text-xs">
+                        <span className="text-muted-foreground">Осталось: </span>
+                        <span className="font-bold text-success">{formatAmount(Math.max(0, remaining))}</span>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="text-xs">
+                        <span className="text-muted-foreground">Превышено на: </span>
+                        <span className="font-bold text-destructive">{formatAmount(Math.abs(remaining))}</span>
+                      </div>
+                    );
+                  }
+                })()}
                 
               </div>
             )}
@@ -829,33 +901,74 @@ function CategoryDetailsDialog({
                 </div>
               )}
               <div className="pt-2 border-t flex justify-between items-center">
-                <span className="font-semibold">Итого доступно:</span>
+                <span className="font-semibold">Бюджет на месяц:</span>
                 <span className="text-base font-bold">{formatAmount(availableBudget)}</span>
               </div>
             </div>
           </div>
           
-          {/* 4. Потрачено и остаток/превышение */}
+          {/* 4. Потрачено и остаток/превышение/долг */}
           <div className="pt-4 border-t space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Потрачено в этом месяце:</span>
               <span className="text-base font-bold">{formatAmount(budget.spent)}</span>
             </div>
-            {budget.spent < availableBudget ? (
-              <div className="flex justify-between items-center p-2 bg-green-500/10 rounded border border-green-500/20">
-                <span className="text-sm text-muted-foreground">Осталось:</span>
-                <span className="text-base font-bold text-green-600 dark:text-green-400">
-                  {formatAmount(availableBudget - budget.spent)}
-                </span>
-              </div>
-            ) : (
-              <div className="flex justify-between items-center p-2 bg-red-500/10 rounded border border-red-500/20">
-                <span className="text-sm text-muted-foreground">Превышено на:</span>
-                <span className="text-base font-bold text-red-600 dark:text-red-400">
-                  {formatAmount(budget.spent - availableBudget)}
-                </span>
-              </div>
-            )}
+            
+            {(() => {
+              const hasDebt = (budget.debt || 0) > 0;
+              const isOverBudget = budget.spent > availableBudget;
+              
+              // Если есть долг и бюджет отрицательный
+              if (hasDebt && availableBudget < 0) {
+                // Показываем сколько нужно погасить (долг минус уже потраченное)
+                const totalOwed = Math.abs(availableBudget) + budget.spent;
+                return (
+                  <div className="space-y-2">
+                    {budget.spent === 0 ? (
+                      <div className="flex justify-between items-center p-2 bg-orange-500/10 rounded border border-orange-500/20">
+                        <span className="text-sm text-muted-foreground">Необходимо погасить долг:</span>
+                        <span className="text-base font-bold text-orange-600 dark:text-orange-400">
+                          {formatAmount(Math.abs(availableBudget))}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between items-center p-2 bg-red-500/10 rounded border border-red-500/20">
+                          <span className="text-sm text-muted-foreground">Общая задолженность:</span>
+                          <span className="text-base font-bold text-red-600 dark:text-red-400">
+                            {formatAmount(totalOwed)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground px-2">
+                          Долг: {formatAmount(budget.debt || 0)} + Траты: {formatAmount(budget.spent)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              }
+              
+              // Обычная логика без долга или с положительным бюджетом
+              if (budget.spent < availableBudget) {
+                return (
+                  <div className="flex justify-between items-center p-2 bg-green-500/10 rounded border border-green-500/20">
+                    <span className="text-sm text-muted-foreground">Осталось:</span>
+                    <span className="text-base font-bold text-green-600 dark:text-green-400">
+                      {formatAmount(availableBudget - budget.spent)}
+                    </span>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="flex justify-between items-center p-2 bg-red-500/10 rounded border border-red-500/20">
+                    <span className="text-sm text-muted-foreground">Превышено на:</span>
+                    <span className="text-base font-bold text-red-600 dark:text-red-400">
+                      {formatAmount(budget.spent - availableBudget)}
+                    </span>
+                  </div>
+                );
+              }
+            })()}
           </div>
           
           {/* 5. Из чего состоит бюджет */}
@@ -955,32 +1068,69 @@ function CategoryDetailsDialog({
                         </div>
                       )}
                       <div className="pt-1 border-t flex justify-between items-center">
-                        <span className="font-semibold">Итого доступно:</span>
+                        <span className="font-semibold">Бюджет на месяц:</span>
                         <span className="text-sm font-bold">{Math.round(currencyAvailableBudget).toLocaleString('ru-RU')} {currencySymbol}</span>
                       </div>
                     </div>
                     
-                    {/* 4. Потрачено и остаток/превышение */}
+                    {/* 4. Потрачено и остаток/превышение/долг */}
                     <div className="pt-2 border-t space-y-1.5">
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-muted-foreground">Потрачено в этом месяце:</span>
                         <span className="text-sm font-bold">{Math.round(currencyBudget.spent).toLocaleString('ru-RU')} {currencySymbol}</span>
                       </div>
-                      {currencyBudget.spent < currencyAvailableBudget ? (
-                        <div className="flex justify-between items-center p-2 bg-green-500/10 rounded border border-green-500/20">
-                          <span className="text-xs text-muted-foreground">Осталось:</span>
-                          <span className="text-sm font-bold text-green-600 dark:text-green-400">
-                            {Math.round(currencyAvailableBudget - currencyBudget.spent).toLocaleString('ru-RU')} {currencySymbol}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between items-center p-2 bg-red-500/10 rounded border border-red-500/20">
-                          <span className="text-xs text-muted-foreground">Превышено на:</span>
-                          <span className="text-sm font-bold text-red-600 dark:text-red-400">
-                            {Math.round(currencyBudget.spent - currencyAvailableBudget).toLocaleString('ru-RU')} {currencySymbol}
-                          </span>
-                        </div>
-                      )}
+                      
+                      {(() => {
+                        // Если есть долг и бюджет отрицательный
+                        if (currencyHasDebt && currencyAvailableBudget < 0) {
+                          if (currencyBudget.spent === 0) {
+                            return (
+                              <div className="flex justify-between items-center p-2 bg-orange-500/10 rounded border border-orange-500/20">
+                                <span className="text-xs text-muted-foreground">Необходимо погасить долг:</span>
+                                <span className="text-sm font-bold text-orange-600 dark:text-orange-400">
+                                  {Math.round(Math.abs(currencyAvailableBudget)).toLocaleString('ru-RU')} {currencySymbol}
+                                </span>
+                              </div>
+                            );
+                          } else {
+                            const totalOwed = Math.abs(currencyAvailableBudget) + currencyBudget.spent;
+                            return (
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center p-2 bg-red-500/10 rounded border border-red-500/20">
+                                  <span className="text-xs text-muted-foreground">Общая задолженность:</span>
+                                  <span className="text-sm font-bold text-red-600 dark:text-red-400">
+                                    {Math.round(totalOwed).toLocaleString('ru-RU')} {currencySymbol}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-muted-foreground px-2">
+                                  Долг: {Math.round(currencyBudget.debt || 0).toLocaleString('ru-RU')} + Траты: {Math.round(currencyBudget.spent).toLocaleString('ru-RU')}
+                                </div>
+                              </div>
+                            );
+                          }
+                        }
+                        
+                        // Обычная логика
+                        if (currencyBudget.spent < currencyAvailableBudget) {
+                          return (
+                            <div className="flex justify-between items-center p-2 bg-green-500/10 rounded border border-green-500/20">
+                              <span className="text-xs text-muted-foreground">Осталось:</span>
+                              <span className="text-sm font-bold text-green-600 dark:text-green-400">
+                                {Math.round(currencyAvailableBudget - currencyBudget.spent).toLocaleString('ru-RU')} {currencySymbol}
+                              </span>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="flex justify-between items-center p-2 bg-red-500/10 rounded border border-red-500/20">
+                              <span className="text-xs text-muted-foreground">Превышено на:</span>
+                              <span className="text-sm font-bold text-red-600 dark:text-red-400">
+                                {Math.round(currencyBudget.spent - currencyAvailableBudget).toLocaleString('ru-RU')} {currencySymbol}
+                              </span>
+                            </div>
+                          );
+                        }
+                      })()}
                     </div>
                   </div>
                 );

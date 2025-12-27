@@ -173,12 +173,12 @@ const Reports = () => {
     const expensesByCurrency: Record<string, number> = {};
     
     (incomesData || []).forEach((income) => {
-      const currency = (income as any).currency || userCurrency || 'RUB';
+      const currency = income.currency || userCurrency || 'RUB';
       incomeByCurrency[currency] = (incomeByCurrency[currency] || 0) + Number(income.amount);
     });
     
     (expensesData || []).forEach((expense) => {
-      const currency = (expense as any).currency || userCurrency || 'RUB';
+      const currency = expense.currency || userCurrency || 'RUB';
       expensesByCurrency[currency] = (expensesByCurrency[currency] || 0) + Number(expense.amount);
     });
 
@@ -199,7 +199,7 @@ const Reports = () => {
         const category = categoriesData.find((cat) => cat.id === expense.category_id);
         const categoryName = category?.name || "Без категории";
         const categoryIcon = category?.icon || "📦";
-        const expenseCurrency = (expense as any).currency || userCurrency || 'RUB';
+        const expenseCurrency = expense.currency || userCurrency || 'RUB';
         const key = `${categoryName}_${expenseCurrency}`;
         const existing = categoryMap.get(key);
         if (existing) {
@@ -234,7 +234,7 @@ const Reports = () => {
     if (expensesData && expensesData.length > 0) {
       expensesData.forEach((expense) => {
         const day = format(new Date(expense.date), 'dd.MM');
-        const expenseCurrency = (expense as any).currency || userCurrency || 'RUB';
+        const expenseCurrency = expense.currency || userCurrency || 'RUB';
         const key = `${day}_${expenseCurrency}`;
         const existing = dailyMap.get(key);
         if (existing) {

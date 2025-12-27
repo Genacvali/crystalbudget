@@ -248,7 +248,7 @@ const Categories = () => {
         const expensesByCurrency: Record<string, number> = {};
         const categoryExpenses = (previousExpensesData || []).filter(exp => exp.category_id === category.id);
         categoryExpenses.forEach(exp => {
-          const expCurrency = (exp as any).currency || userCurrency || 'RUB';
+          const expCurrency = exp.currency || userCurrency || 'RUB';
           expensesByCurrency[expCurrency] = (expensesByCurrency[expCurrency] || 0) + Number(exp.amount);
         });
 
@@ -285,7 +285,7 @@ const Categories = () => {
               } else if (alloc.allocationType === 'percent') {
                 const sourceIncomes = (previousIncomesData || []).filter(inc => 
                   inc.source_id === alloc.incomeSourceId &&
-                  ((inc as any).currency || userCurrency || 'RUB') === currency
+                  (inc.currency || userCurrency || 'RUB') === currency
                 );
                 const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
                 const expectedSourceAmount = sourcesWithExpectedAmounts.find(s => s.id === alloc.incomeSourceId)?.amount || 0;
@@ -300,7 +300,7 @@ const Categories = () => {
             } else if (category.linkedSourceId && category.allocationPercent) {
               const sourceIncomes = (previousIncomesData || []).filter(inc => 
                 inc.source_id === category.linkedSourceId &&
-                ((inc as any).currency || userCurrency || 'RUB') === currency
+                (inc.currency || userCurrency || 'RUB') === currency
               );
               const actualSourceTotal = sourceIncomes.reduce((sum, inc) => sum + Number(inc.amount), 0);
               const expectedSourceAmount = sourcesWithExpectedAmounts.find(s => s.id === category.linkedSourceId)?.amount || 0;
