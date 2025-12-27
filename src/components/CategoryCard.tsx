@@ -188,12 +188,12 @@ export function CategoryCard({
                   // currencyBudget.allocated уже включает carryOver
                   // Доступный бюджет = allocated - debt
                   const currencyAvailableBudget = currencyBudget.allocated - (currencyBudget.debt || 0);
-                  // Процент считаем от базового бюджета (allocated), а не от доступного
-                  const currencyUsedPercentage = currencyBudget.allocated > 0 
-                    ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+                  // Процент и превышение считаем от ДОСТУПНОГО бюджета (с учетом долга)
+                  const currencyUsedPercentage = currencyAvailableBudget > 0 
+                    ? (currencyBudget.spent / currencyAvailableBudget) * 100 
                     : 0;
-                  // Превышение определяется от базового бюджета
-                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+                  // Превышение определяется от доступного бюджета (с учетом долга)
+                  const currencyIsOverBudget = currencyBudget.spent > currencyAvailableBudget;
                   
                   const currencySymbols: Record<string, string> = {
                     RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -250,7 +250,7 @@ export function CategoryCard({
                   const hasDebt = (currencyBudget.debt || 0) > 0;
                   const hasAdjustments = hasCarryOver || hasDebt;
                   
-                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+                  const currencyIsOverBudget = currencyBudget.spent > currencyAvailableBudget;
                   const currencyRemaining = currencyAvailableBudget - currencyBudget.spent;
                   
                   return (
@@ -369,15 +369,14 @@ export function CategoryCard({
                   // currencyBudget.allocated уже включает carryOver (базовый бюджет + перенос)
                   // Доступный бюджет = allocated - debt (долг уменьшает доступные средства)
                   const currencyAvailableBudget = currencyBudget.allocated - (currencyBudget.debt || 0);
-                  // Процент считаем от базового бюджета (allocated), а не от доступного
-                  // Потому что долг - это уже прошлое превышение, а процент показывает текущее использование
-                  const currencyUsedPercentage = currencyBudget.allocated > 0 
-                    ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+                  // Процент и превышение считаем от ДОСТУПНОГО бюджета (с учетом долга)
+                  const currencyUsedPercentage = currencyAvailableBudget > 0 
+                    ? (currencyBudget.spent / currencyAvailableBudget) * 100 
                     : 0;
-                  // Превышение определяется от базового бюджета, а не от доступного
-                  const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+                  // Превышение определяется от доступного бюджета (с учетом долга)
+                  const currencyIsOverBudget = currencyBudget.spent > currencyAvailableBudget;
                   const currencyRemaining = currencyAvailableBudget - currencyBudget.spent;
-                  const currencyOverBudget = currencyIsOverBudget ? currencyBudget.spent - currencyBudget.allocated : 0;
+                  const currencyOverBudget = currencyIsOverBudget ? currencyBudget.spent - currencyAvailableBudget : 0;
                   
                   const currencySymbols: Record<string, string> = {
                     RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -385,33 +384,43 @@ export function CategoryCard({
                   };
                   const symbol = currencySymbols[currency] || currency;
                   
+                  const hasDebt = (currencyBudget.debt || 0) > 0;
+                  
                   return (
                     <div key={currency} className="space-y-0.5">
                       <div className={cn(
                         "text-sm font-bold",
-                        currencyIsOverBudget ? "text-destructive" : "text-foreground"
+                        currencyIsOverBudget ? "text-destructive" : hasDebt ? "text-orange-600 dark:text-orange-400" : "text-foreground"
                       )}>
                         {currencyUsedPercentage.toFixed(0)}%
                       </div>
-                      {!currencyIsOverBudget && currencyRemaining > 0 ? (
-                        <div className="text-[9px] text-muted-foreground font-medium">
-                          осталось
-                        </div>
-                      ) : null}
-                      {!currencyIsOverBudget && currencyRemaining > 0 ? (
-                        <div className="text-[9px] text-success font-medium">
-                          {Math.round(currencyRemaining).toLocaleString('ru-RU')} {symbol}
-                        </div>
-                      ) : null}
-                      {currencyIsOverBudget && currencyOverBudget > 0 ? (
-                        <div className="text-[9px] text-muted-foreground font-medium">
-                          превышено
-                        </div>
-                      ) : null}
-                      {currencyIsOverBudget && currencyOverBudget > 0 ? (
-                        <div className="text-[9px] text-destructive font-medium">
-                          {Math.round(currencyOverBudget).toLocaleString('ru-RU')} {symbol}
-                        </div>
+                      {hasDebt ? (
+                        <>
+                          <div className="text-[9px] text-muted-foreground font-medium">
+                            долг вычтен
+                          </div>
+                          <div className="text-[9px] text-orange-600 dark:text-orange-400 font-medium">
+                            {Math.round(currencyBudget.debt || 0).toLocaleString('ru-RU')} {symbol}
+                          </div>
+                        </>
+                      ) : !currencyIsOverBudget && currencyRemaining > 0 ? (
+                        <>
+                          <div className="text-[9px] text-muted-foreground font-medium">
+                            осталось
+                          </div>
+                          <div className="text-[9px] text-success font-medium">
+                            {Math.round(currencyRemaining).toLocaleString('ru-RU')} {symbol}
+                          </div>
+                        </>
+                      ) : currencyIsOverBudget && currencyOverBudget > 0 ? (
+                        <>
+                          <div className="text-[9px] text-muted-foreground font-medium">
+                            превышено
+                          </div>
+                          <div className="text-[9px] text-destructive font-medium">
+                            {Math.round(currencyOverBudget).toLocaleString('ru-RU')} {symbol}
+                          </div>
+                        </>
                       ) : null}
                     </div>
                   );
@@ -423,11 +432,20 @@ export function CategoryCard({
               <>
                 <div className={cn(
                   "text-lg font-bold",
-                  isOverBudget ? "text-destructive" : "text-foreground"
+                  isOverBudget ? "text-destructive" : (budget.debt || 0) > 0 ? "text-orange-600 dark:text-orange-400" : "text-foreground"
                 )}>
                   {usedPercentage.toFixed(0)}%
                 </div>
-                {!isOverBudget && remaining > 0 ? (
+                {(budget.debt || 0) > 0 ? (
+                  <>
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      долг вычтен
+                    </div>
+                    <div className="text-[10px] text-orange-600 dark:text-orange-400 font-medium">
+                      {formatAmount(budget.debt || 0)}
+                    </div>
+                  </>
+                ) : !isOverBudget && remaining > 0 ? (
                   <>
                     <div className="text-[9px] text-muted-foreground font-medium">
                       осталось
@@ -436,8 +454,7 @@ export function CategoryCard({
                       {formatAmount(remaining)}
                     </div>
                   </>
-                ) : null}
-                {isOverBudget ? (
+                ) : isOverBudget ? (
                   <>
                     <div className="text-[9px] text-muted-foreground font-medium">
                       превышено
@@ -610,15 +627,6 @@ export function CategoryCard({
           </div>
         ) : null}
 
-        {/* Задолженность из предыдущего месяца */}
-        {!hideBudgetDetails && budget.debt && budget.debt > 0 ? (
-          <div className="text-center py-1 px-2 bg-orange-500/10 rounded border border-orange-500/20">
-            <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
-              Долг с прошлого месяца: -{formatAmount(budget.debt)}
-            </span>
-          </div>
-        ) : null}
-
         {/* Остаток или превышение */}
         {!hideBudgetDetails && !isOverBudget && remaining > 0 ? (
           <div className="text-center py-1 px-2 bg-success/10 rounded border border-success/20">
@@ -639,14 +647,14 @@ export function CategoryCard({
             // currencyBudget.allocated уже включает carryOver
             // Доступный бюджет = allocated - debt
             const currencyAvailableBudget = currencyBudget.allocated - (currencyBudget.debt || 0);
-            // Процент считаем от базового бюджета (allocated), а не от доступного
-            const currencyUsedPercentage = currencyBudget.allocated > 0 
-              ? (currencyBudget.spent / currencyBudget.allocated) * 100 
+            // Процент и превышение считаем от ДОСТУПНОГО бюджета (с учетом долга)
+            const currencyUsedPercentage = currencyAvailableBudget > 0 
+              ? (currencyBudget.spent / currencyAvailableBudget) * 100 
               : 0;
-            // Превышение определяется от базового бюджета
-            const currencyIsOverBudget = currencyBudget.spent > currencyBudget.allocated;
+            // Превышение определяется от доступного бюджета (с учетом долга)
+            const currencyIsOverBudget = currencyBudget.spent > currencyAvailableBudget;
             const currencyRemaining = currencyAvailableBudget - currencyBudget.spent;
-            const currencyOverBudget = currencyIsOverBudget ? currencyBudget.spent - currencyBudget.allocated : 0;
+            const currencyOverBudget = currencyIsOverBudget ? currencyBudget.spent - currencyAvailableBudget : 0;
             
             const currencySymbols: Record<string, string> = {
               RUB: '₽', USD: '$', EUR: '€', GBP: '£', 
@@ -682,11 +690,6 @@ export function CategoryCard({
                     из {Math.round(currencyAvailableBudget).toLocaleString('ru-RU')} {symbol}
                   </span>
                 </div>
-                {!hideBudgetDetails && currencyIsOverBudget && currencyOverBudget > 0 && (
-                  <div className="text-[10px] text-destructive font-medium">
-                    Превышен на {Math.round(currencyOverBudget).toLocaleString('ru-RU')} {symbol}
-                  </div>
-                )}
               </div>
             );
           })
@@ -718,8 +721,18 @@ export function CategoryCard({
       </div>
       )}
 
-      {/* Предупреждение о превышении */}
-      {!hideBudgetDetails && isOverBudget && (
+      {/* Информация о долге или превышении */}
+      {!hideBudgetDetails && (budget.debt || 0) > 0 && (
+        <div className="flex items-center gap-2 p-2 mb-2 bg-orange-500/15 rounded border border-orange-500/30">
+          <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-orange-700 dark:text-orange-300">
+              Долг с прошлого месяца: {formatAmount(budget.debt || 0)} вычтен из бюджета
+            </p>
+          </div>
+        </div>
+      )}
+      {!hideBudgetDetails && isOverBudget && (budget.debt || 0) === 0 && (
         <div className="flex items-center gap-2 p-2 mb-2 bg-destructive/15 rounded border border-destructive/30">
           <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
           <div className="flex-1 min-w-0">
