@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/components/ui/use-toast';
-import { RefreshCw, Link as LinkIcon, AlertCircle, LogOut, Shield, Key, Bell, Palette, Globe, Upload, Download } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { RefreshCw, Link as LinkIcon } from 'lucide-react';
 import { ZENMONEY_CONFIG } from '@/config/zenmoney';
 
 const Settings = () => {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [zenMoneyConnected, setZenMoneyConnected] = useState(false);
   const [zenMoneyLoading, setZenMoneyLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -48,7 +47,6 @@ const Settings = () => {
 
   const handleZenMoneyAuth = () => {
     const redirectUri = 'https://crystalbudget.net';
-    // Формируем URL вручную, чтобы точно всё было на месте
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: ZENMONEY_CONFIG.CLIENT_KEY,
@@ -115,10 +113,8 @@ const Settings = () => {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Настройки</h1>
-      </div>
+    <div className="container mx-auto p-6 max-w-4xl space-y-8">
+      <h1 className="text-3xl font-bold tracking-tight">Настройки</h1>
 
       <div className="grid gap-6">
         <Card>
@@ -129,12 +125,12 @@ const Settings = () => {
           <CardContent className="space-y-4">
             {zenMoneyConnected ? (
               <div className="space-y-4">
-                <div className="p-3 border rounded-lg bg-success/10 border-success/30 flex items-center justify-between">
+                <div className="p-3 border rounded-lg bg-green-500/10 border-green-500/30 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">✅ ZenMoney подключен</p>
                     <p className="text-xs text-muted-foreground">Транзакции синхронизируются автоматически</p>
                   </div>
-                  <RefreshCw className="h-4 w-4 text-success animate-spin-slow" />
+                  <RefreshCw className="h-4 w-4 text-green-500 animate-spin" />
                 </div>
                 <Button
                   onClick={handleDisconnectZenMoney}
