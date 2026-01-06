@@ -69,11 +69,11 @@ const Settings = () => {
   };
 
   const handleZenMoneyAuth = () => {
-    // Не передаем redirect_uri, чтобы ZenMoney использовал тот, что в настройках приложения
-    // Это решит проблему 400 Bad Request при несовпадении доменов (например, на localhost)
-    const authUrl = `${ZENMONEY_CONFIG.AUTH_URL}?response_type=code&client_id=${ZENMONEY_CONFIG.CLIENT_KEY}`;
+    // Пробуем максимально стандартный Redirect URI
+    const redirectUri = 'https://crystalbudget.net';
+    const authUrl = `${ZENMONEY_CONFIG.AUTH_URL}?response_type=code&client_id=${ZENMONEY_CONFIG.CLIENT_KEY}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     
-    console.log('🚀 Redirecting to ZenMoney Auth...');
+    console.log('🚀 Redirecting to ZenMoney Auth with URI:', redirectUri);
     window.location.href = authUrl;
   };
 
