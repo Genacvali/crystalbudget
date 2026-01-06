@@ -8,10 +8,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
-import { LogOut, Moon, Sun, Sparkles, TreePine, Eye, Users, Copy, UserPlus, Trash2, DollarSign, Upload } from "lucide-react";
+import { LogOut, Moon, Sun, Sparkles, TreePine, Eye, Users, Copy, UserPlus, Trash2, DollarSign, Upload, RefreshCw, Link as LinkIcon } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/hooks/useCurrency";
+import { ZENMONEY_CONFIG } from "@/config/zenmoney";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 
 const Settings = () => {
@@ -34,6 +35,8 @@ const Settings = () => {
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [telegramUsername, setTelegramUsername] = useState("");
   const [settingWebhook, setSettingWebhook] = useState(false);
+  const [zenMoneyConnected, setZenMoneyConnected] = useState(false);
+  const [zenMoneyLoading, setZenMoneyLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -41,9 +44,106 @@ const Settings = () => {
       loadProfile();
       loadFamily();
       loadTelegramConnection();
+      checkZenMoneyConnection();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Обработка возврата из ZenMoney (URL содержит code)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code && user) {
+      handleZenMoneyCallback(code);
+    }
+  }, [user]);
+
+  const checkZenMoneyConnection = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('zenmoney_connections')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    setZenMoneyConnected(!!data);
+  };
+
+  const handleZenMoneyAuth = () => {
+    // Не передаем redirect_uri, чтобы ZenMoney использовал тот, что в настройках приложения
+    // Это решит проблему 400 Bad Request при несовпадении доменов (например, на localhost)
+    const authUrl = `${ZENMONEY_CONFIG.AUTH_URL}?response_type=code&client_id=${ZENMONEY_CONFIG.CLIENT_KEY}`;
+    
+    console.log('🚀 Redirecting to ZenMoney Auth...');
+    window.location.href = authUrl;
+  };
+
+  const handleZenMoneyCallback = async (code: string) => {
+    setZenMoneyLoading(true);
+    try {
+      const redirectUri = window.location.origin + window.location.pathname;
+      // Очищаем URL от параметров
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      // Запрос на обмен кода на токен через Edge Function
+      const { data, error } = await supabase.functions.invoke('zenmoney-auth', {
+        body: { 
+          code, 
+          userId: user?.id,
+          redirectUri // Передаем тот же URI для обмена на токен
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "ZenMoney подключен",
+        description: "Ваши транзакции начнут синхронизироваться автоматически",
+      });
+      setZenMoneyConnected(true);
+    } catch (error) {
+      console.error('ZenMoney auth error:', error);
+      toast({
+        variant: "destructive",
+        title: "Ошибка подключения ZenMoney",
+        description: "Не удалось авторизоваться в ZenMoney",
+      });
+    } finally {
+      setZenMoneyLoading(false);
+    }
+  };
+
+  const handleDisconnectZenMoney = async () => {
+    // ... существующий код ...
+  };
+
+  const handleSaveManualToken = async () => {
+    if (!zenMoneyManualToken) return;
+    setZenMoneyLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('zenmoney-auth', {
+        body: { access_token: zenMoneyManualToken, userId: user?.id }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "ZenMoney подключен",
+        description: "Токен успешно сохранен",
+      });
+      setZenMoneyConnected(true);
+      setZenMoneyManualToken("");
+      setShowManualZenMoney(false);
+    } catch (error) {
+      console.error('ZenMoney manual auth error:', error);
+      toast({
+        variant: "destructive",
+        title: "Ошибка",
+        description: "Не удалось сохранить токен ZenMoney",
+      });
+    } finally {
+      setZenMoneyLoading(false);
+    }
+  };
 
 
 
@@ -1227,6 +1327,50 @@ const Settings = () => {
 
 
 
+
+        <Card>
+          <CardHeader>
+            <CardTitle>ZenMoney</CardTitle>
+            <CardDescription>Автоматическая синхронизация транзакций из Дзен-мани</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {zenMoneyConnected ? (
+              <div className="space-y-4">
+                <div className="p-3 border rounded-lg bg-success/10 border-success/30 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">✅ ZenMoney подключен</p>
+                    <p className="text-xs text-muted-foreground">Транзакции синхронизируются автоматически</p>
+                  </div>
+                  <RefreshCw className="h-4 w-4 text-success animate-spin-slow" />
+                </div>
+                <Button
+                  onClick={handleDisconnectZenMoney}
+                  disabled={zenMoneyLoading}
+                  variant="destructive"
+                  className="w-full"
+                >
+                  Отключить ZenMoney
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-3 border rounded-lg bg-muted/30">
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    Подключите ZenMoney, чтобы ваши расходы и доходы автоматически попадали в CrystalBudget.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleZenMoneyAuth}
+                  disabled={zenMoneyLoading}
+                  className="w-full"
+                >
+                  <LinkIcon className="mr-2 h-4 w-4" />
+                  {zenMoneyLoading ? "Подключение..." : "Подключить ZenMoney"}
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
